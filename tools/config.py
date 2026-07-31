@@ -38,21 +38,14 @@ NODE_BIN = "node"
 TDID_CLIENT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tdid_client.js")
 
 # ---- 登录信息落盘文件 (checkToken 成功后保存 userInfo) ----
-LOGIN_INFO_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "login_info.json")
+LOGIN_INFO_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cache", "login_info.json")
 
 
 # ============================ 请求头 ============================
 def build_headers():
     """构造带当前 API_TOKEN 的请求头 (API_TOKEN 可能在运行时被更新)"""
     return {
-        "User-Agent": (
-            "Mozilla/5.0 (Linux; Android 16; PLR110 Build/BP2A.250605.015; wv) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 "
-            "Chrome/146.0.7680.178 Mobile Safari/537.36 XWEB/1460249 "
-            "MMWEBSDK/20260202 MMWEBID/8213 MicroMessenger/8.0.71.3080(0x28004750) "
-            "WeChat/arm64 Weixin NetType/WIFI Language/zh_CN ABI/arm64 "
-            "MiniProgramEnv/android"
-        ),
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36 MicroMessenger/7.0.20.1781(0x6700143B) NetType/WIFI MiniProgramEnv/Windows WindowsWechat/WMPF WindowsWechat(0x63090a13) UnifiedPCWindowsWechat(0xf2541721) XWEB/19027",
         "Accept": "application/json",
         "content-type": "application/json",
         "Host-Ip": "",
