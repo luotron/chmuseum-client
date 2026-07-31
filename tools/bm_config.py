@@ -1,0 +1,62 @@
+"""
+bm_config.py — 国博下单工具的全局配置与常量
+================================================================================
+运行前请按需替换 API_TOKEN / 实名信息。USER_ID 会在 checkToken 成功后自动回填。
+"""
+
+import os
+
+# ============================ 接口 URL ============================
+CHECKTOKEN_URL = "https://uu.chnmuseum.cn/prod-api/api/checkToken"
+ALL_CONFIG_URL = (
+    "https://wapticket.chnmuseum.cn/prod-api/basesetting/HallSetting/ingore/"
+    "gainAllSystemConfig?channel=wxMini&requestTaskKey=gainAllSystemConfigLogin"
+    "&ticketUseType=1&p=wxmini"
+)
+PRICE_URL = "https://wxmini.chnmuseum.cn/prod-api/pool/ingore/getPriceByScheduleId"
+GETBLOCK_URL = "https://wxmini.chnmuseum.cn/prod-api/pool/getBlock"
+PLACEORDER_URL = "https://wxmini.chnmuseum.cn/prod-api/config/orderRule/placeOrder"
+CHECKTIME_URL = "https://vv.video.qq.com/checktime?otype=json"
+
+# ============================ 常量 ============================
+NONCE_KEY = "AyrKJRXPO3nR5Abc"   # getBlock nonce 的 AES key (源码固定)
+POINT_OFFSET = 10                 # 点选坐标 -10 偏移 (Verify 组件 bindingClick)
+PLATFORM = 2                      # 非扫码
+
+# ---- 登录 apiToken (JWT), 请按需替换为自己的有效 token ----
+API_TOKEN = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJsb2dpbl91c2VyX25hbWUiOiLmuLjlrqIgMTUzMDMwMjE5MDkiLCJsb2dpbl9leHBpcmVkX3RpbWUiOjE3ODUzMTU1OTA4MjcsImxvZ2luX3VzZXJfaWQiOjM2NzEyNzYyLCJsb2dpbl91c2VyX2tleSI6IjM2NzEyNzYyOjEwMDc3NGVlLWYyOGMtNDVjOS05NTk3LTk4YWVhMWMzMjNjMyIsImxvZ2luX3VzZXJfYWNjb3VudCI6IjE1MzAzMDIxOTA5In0.5TVMh9ar8j10gHrsi4HDG6w8JCkR65nWqsKJKS0lhmk"
+
+# ---- 下单实名信息 (与抓包一致, 可按需替换) ----
+ORDER_USER_NAME = "罗江枫"
+ORDER_CERT_INFO = "441826200011111758"
+
+# ---- 用户 userId (nonce 明文需要); 留空则由 checkToken 成功后自动回填 ----
+USER_ID = ""
+
+# ---- node 可执行文件 & tdid 脚本路径 ----
+NODE_BIN = "node"
+TDID_CLIENT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tdid_client.js")
+
+# ---- 登录信息落盘文件 (checkToken 成功后保存 userInfo) ----
+LOGIN_INFO_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "login_info.json")
+
+
+# ============================ 请求头 ============================
+def build_headers():
+    """构造带当前 API_TOKEN 的请求头 (API_TOKEN 可能在运行时被更新)"""
+    return {
+        "User-Agent": (
+            "Mozilla/5.0 (Linux; Android 16; PLR110 Build/BP2A.250605.015; wv) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 "
+            "Chrome/146.0.7680.178 Mobile Safari/537.36 XWEB/1460249 "
+            "MMWEBSDK/20260202 MMWEBID/8213 MicroMessenger/8.0.71.3080(0x28004750) "
+            "WeChat/arm64 Weixin NetType/WIFI Language/zh_CN ABI/arm64 "
+            "MiniProgramEnv/android"
+        ),
+        "Accept": "application/json",
+        "content-type": "application/json",
+        "Host-Ip": "",
+        "charset": "utf-8",
+        "Referer": "https://servicewechat.com/wx9e2927dd595b0473/100/page-frame.html",
+        "Authorization": "Bearer " + API_TOKEN,
+    }
