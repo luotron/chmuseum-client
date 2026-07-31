@@ -229,9 +229,15 @@ def scan_for_ticket(session):
                     continue
                 found_any_hall = True
 
+                # 优先「基本陈列」(hallId==1): 把它排到最前, 有余票时优先锁定
+                hall_vos = sorted(
+                    hall_vos, key=lambda h: 0 if h.get("hallId") == 1 else 1
+                )
+
                 for hall in hall_vos:
                     hall_id = hall.get("hallId")
                     hall_name = hall.get("name", "未知展厅")
+
                     schedules = hall.get("scheduleTicketPoolVOS") or []
 
                     for sch in schedules:
