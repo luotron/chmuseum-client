@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>国博余票监控 + 验证码</title>
+<script src="https://cdn.jsdelivr.net/npm/crypto-js@4.2.0/crypto-js.min.js"></script>
+<style>
+  :root{--bg:#f5f6f8;--card:#fff;--main:#d44421;--ok:#1abd6c;--line:#e6e6e6;--txt:#333;--sub:#888;}
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:-apple-system,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--txt);padding:16px;}
+  h1{font-size:20px;margin:0 0 12px;}
+  .wrap{display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start;}
+  .card{background:var(--card);border-radius:10px;padding:16px;box-shadow:0 1px 6px rgba(0,0,0,.06);}
+  .col{flex:1 1 460px;min-width:340px;}
+  label{display:block;font-size:13px;font-weight:600;margin:12px 0 6px;}
+  input[type=text],textarea,select{width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:6px;font-size:13px;font-family:monospace;}
+  textarea{resize:vertical;min-height:64px;}
+  .btn{background:var(--main);color:#fff;border:none;border-radius:6px;padding:9px 16px;font-size:14px;cursor:pointer;margin-top:8px;}
+  .btn.sec{background:#666;}
+  .btn.ok{background:var(--ok);}
+  .btn:disabled{opacity:.5;cursor:not-allowed;}
+  .btn:active{opacity:.85;}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
+  .userbar{display:flex;align-items:center;gap:12px;background:#fbf3f0;border:1px solid #f0d9d1;border-radius:8px;padding:10px 12px;margin-top:10px;}
+  .userbar img{width:40px;height:40px;border-radius:50%;background:#eee;}
+  .userbar .uname{font-weight:600;}
+  .userbar .usub{color:var(--sub);font-size:12px;}
+  .small{font-size:12px;color:var(--sub);margin-top:4px;}
+  .status{font-size:13px;padding:6px 10px;border-radius:6px;background:#eef;display:inline-block;margin-top:8px;}
+  .log{font-family:monospace;font-size:12px;white-space:pre-wrap;word-break:break-all;background:#111;color:#0f0;border-radius:6px;padding:10px;height:280px;overflow:auto;margin-top:8px;}
+  table{width:100%;border-collapse:collapse;font-size:12px;margin-top:8px;}
+  th,td{border:1px solid var(--line);padding:5px 7px;text-align:left;}
+  th{background:#f7f7f7;}
+  tr.avail{background:#eafaf1;}
+  .badge{display:inline-block;border-radius:4px;padding:1px 6px;font-size:11px;color:#fff;}
+  .badge.g{background:var(--ok);}
+  .badge.r{background:#bbb;}
+  /* 验证码弹层 */
+  .mask{position:fixed;inset:0;background:rgba(0,0,0,.7);display:none;align-items:center;justify-content:center;z-index:99;}
+  .vbox{background:#fff;border-radius:6px;width:345px;box-sizing:border-box;}
+  .vtop{display:flex;align-items:center;justify-content:space-between;height:48px;padding:0 14px;border-bottom:1px solid #e4e7eb;font-size:16px;}
+  .vtop .cls{cursor:pointer;color:#999;font-size:22px;}
+  .vbody{padding:15px;}
+  .panel{position:relative;width:310px;height:155px;border:1px solid #ddd;border-radius:3px;overflow:hidden;cursor:crosshair;}
+  .panel img{display:block;width:310px;height:155px;}
+  .pt{position:absolute;width:22px;height:22px;margin:-11px 0 0 -11px;border-radius:50%;background:var(--ok);color:#fff;font-size:12px;line-height:22px;text-align:center;z-index:9;pointer-events:none;box-shadow:0 0 3px rgba(0,0,0,.4);}
+  .vtips{font-size:13px;color:#555;margin:10px 0 4px;}
+  .jig{margin-top:8px;}
+  .jig img{border:1px solid #eee;border-radius:4px;}
+  .out{font-family:monospace;font-size:12px;word-break:break-all;background:#faf7f5;border:1px solid var(--line);border-radius:6px;padding:8px;margin-top:8px;}
+</style>
+</head>
+<body>
+  <h1>国博余票监控 <span style="font-size:12px;color:var(--sub)">（本地代理 http://127.0.0.1:8787）</span></h1>
+
+  <div class="wrap">
+    <!-- 左列：登录 + 控制 -->
+    <div class="card col">
+      <label>apiToken（登录凭证 JWT）</label>
+      <textarea id="apiToken" placeholder="粘贴 apiToken，例如 eyJ0eXAiOiJKV1Qi..."></textarea>
+      <div class="row">
+        <button class="btn" id="loginBtn">登录 / 校验</button>
+        <span class="status" id="loginStatus">未登录</span>
+      </div>
+
+      <div class="userbar" id="userBar" style="display:none">
+        <img id="uAvatar" alt="" />
+        <div>
+          <div class="uname" id="uName">—</div>
+          <div class="usub" id="uSub">—</div>
+        </div>
+      </div>
+
+      <label>监控间隔（秒，随机上下浮动）</label>
+      <div class="row">
+        <input type="text" id="interval" value="2.5" style="max-width:120px" />
+        <label style="margin:0;font-weight:400"><input type="checkbox" id="autoBlock" checked style="width:auto"> 发现余票自动弹验证码</label>
+      </div>
+      <div class="row">
+        <button class="btn ok" id="startBtn" disabled>开始监控</button>
+        <button class="btn sec" id="stopBtn" disabled>停止</button>
+        <button class="btn sec" id="onceBtn" disabled>手动查一次</button>
+        <button class="btn" id="blockBtn" disabled>立即获取验证码</button>
+      </div>
+      <div class="status" id="monStatus">空闲</div>
+
+      <label>运行日志</label>
+      <div class="log" id="log"></div>
+    </div>
+
+    <!-- 右列：余票结果 -->
+    <div class="card col">
+      <label>余票明细（最近一次扫描）</label>
+      <div class="small" id="scanInfo">尚未扫描</div>
+      <table id="tbl">
+        <thead><tr><th>展厅</th><th>场次</th><th>hallId</th><th>schedId</th><th>余票</th><th>priceId</th></tr></thead>
+        <tbody id="tblBody"><tr><td colspan="6" style="text-align:center;color:#999">—</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 验证码弹层 -->
+  <div class="mask" id="mask">
+    <div class="vbox">
+      <div class="vtop"><span>请完成安全验证</span><span class="cls" id="vClose">&times;</span></div>
+      <div class="vbody">
+        <div class="vtips" id="vTips">请点选出指定的图案</div>
+        <div class="panel" id="panel">
+          <img id="vImg" alt="验证码" />
+        </div>
+        <div class="jig" id="jigWrap" style="display:none"><div class="small">拼图/目标图案：</div><img id="vJig" alt="jigsaw" /></div>
+        <div class="out" id="vInfo">点击图片选择目标 →</div>
+        <div class="out" id="vCipher">pointJson(加密): —</div>
+        <div class="row">
+          <button class="btn sec" id="vReset">重选</button>
+          <button class="btn" id="vRefresh">刷新验证码</button>
+        </div>
+
+        <hr style="margin:14px 0;border:none;border-top:1px solid #eee" />
+        <div class="small" style="font-weight:600;color:#333">下单信息</div>
+        <label style="margin-top:8px">购票人姓名</label>
+        <input type="text" id="odName" placeholder="罗江枫" />
+        <label>证件号（身份证）</label>
+        <input type="text" id="odCert" placeholder="4418262000..." />
+        <label>ticketPriceId（余票表 priceId 列）</label>
+        <input type="text" id="odPriceId" placeholder="8" />
+        <div class="out" id="odInfo">填好信息并完成点选后点击“提交下单”</div>
+        <button class="btn ok" id="odSubmit" style="width:100%">提交下单</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+(function(){
+  var API = 'http://127.0.0.1:8787';
+  var NONCE_KEY = 'AyrKJRXPO3nR5Abc'; // getBlock nonce 加密 key（源码固定）
+  var OFFSET = 10; // 点选坐标 -10 偏移（Verify 组件 bindingClick）
+  var CryptoJS = window.CryptoJS;
+
+  var st = {
+    token: '',        // Bearer JWT
+    phone: '',        // 用户手机号
+    userId: '',       // 用户 userId（nonce 用）
+    timer: null,
+    verify: null,     // 当前验证码数据 {secretKey, token, ...}
+    points: [],       // 已点选（图上像素坐标）
+    ctx: null         // 触发验证码的余票上下文 {hallId, scheduleId, date}
+  };
+
+  function $(id){ return document.getElementById(id); }
+  function now(){ return new Date().toTimeString().slice(0,8); }
+  function log(msg){
+    var el = $('log');
+    el.textContent += '['+now()+'] '+msg+'\n';
+    el.scrollTop = el.scrollHeight;
+  }
+
+  function aesEnc(text, keyStr){
+    var key = CryptoJS.enc.Utf8.parse(keyStr);
+    return CryptoJS.AES.encrypt(CryptoJS.enc.Utf8.parse(text), key,
+      { mode: CryptoJS.mode.ECB, padding: CryptoJS.pad.Pkcs7 }).toString();
+  }
+
+  // ---------- 登录 ----------
+  $('loginBtn').addEventListener('click', async function(){
+    var tk = $('apiToken').value.trim();
+    if (!tk){ alert('请粘贴 apiToken'); return; }
+    $('loginStatus').textContent = '校验中...';
+    try{
+      var r = await fetch(API+'/api/checkToken', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ apiToken: tk })
+      });
+      var j = await r.json();
+      if (j.code === 200 && j.userInfo){
+        st.token = 'Bearer ' + tk;
+        st.phone = j.userInfo.phoneNumber || '';
+        st.userId = j.userInfo.userId || '';
+        $('loginStatus').textContent = '已登录';
+        $('userBar').style.display = 'flex';
+        $('uAvatar').src = j.userInfo.avatar || '';
+        $('uName').textContent = (j.userInfo.nickName || j.userInfo.userName || '') + '  (uid:'+j.userInfo.userId+')';
+        $('uSub').textContent = '手机: '+st.phone+' | userType: '+j.userInfo.userType;
+        ['startBtn','onceBtn','blockBtn'].forEach(function(id){ $(id).disabled=false; });
+        log('登录成功：'+st.phone);
+      } else {
+        $('loginStatus').textContent = '失败：'+(j.msg||j.error||('code '+j.code));
+        log('登录失败：'+JSON.stringify(j).slice(0,200));
+      }
+    }catch(e){
+      $('loginStatus').textContent = '错误：'+e.message;
+      log('登录异常：'+e.message+'（代理是否启动？）');
+    }
+  });
+
+  // ---------- 余票检测 ----------
+  async function scanOnce(){
+    $('monStatus').textContent = '扫描中... '+now();
+    try{
+      var r = await fetch(API+'/api/allConfig', { headers:{ Authorization: st.token } });
+      var j = await r.json();
+      if (j.code !== 200){ log('allConfig 返回 code='+j.code+' '+(j.msg||'')); $('monStatus').textContent='异常 code='+j.code; return; }
+      var data = j.data || {};
+      var cal = data.calendarTicketPoolsByDate || [];
+      var rows = [];
+      var availableFound = false;
+      var firstAvailCtx = null; // 第一条有余票的上下文
+      var pricePromises = [];
+
+      cal.forEach(function(item){
+        var date = item.currentDate;
+        var halls = item.hallTicketPoolVOS;
+        if (!halls) return;
+        halls.forEach(function(hall){
+          var scheds = hall.scheduleTicketPoolVOS;
+          if (scheds && scheds.length){
+            scheds.forEach(function(sch){
+              var pool = sch.ticketPool || 0;
+              if (pool>0){
+                availableFound = true;
+                if (!firstAvailCtx) firstAvailCtx = { hallId: hall.hallId, scheduleId: sch.hallScheduleId, date: date };
+              }
+              var row = {
+                date: date, hallName: hall.name, hallId: hall.hallId,
+                schedName: sch.scheduleName || sch.timeRange || '全天',
+                schedId: sch.hallScheduleId, pool: pool, priceIds: ''
+              };
+              rows.push(row);
+              if (pool>0){
+                pricePromises.push(
+                  fetch(API+'/api/price?hallId='+hall.hallId+'&scheduleId='+sch.hallScheduleId+'&queryDate='+date,
+                    { headers:{ Authorization: st.token } })
+                  .then(function(x){return x.json();})
+                  .then(function(pj){
+                    if (pj.code===200 && Array.isArray(pj.data)){
+                      row.priceIds = pj.data.map(function(p){ return p.priceId+'('+(p.ticketPool||0)+')'; }).join(', ');
+                    }
+                  }).catch(function(){})
+                );
+              }
+            });
+          } else {
+            var pool2 = hall.ticketPool||0;
+            if (pool2>0) availableFound = true;
+            rows.push({ date:date, hallName:hall.name, hallId:hall.hallId, schedName:'全天', schedId:'-', pool:pool2, priceIds:'' });
+          }
+        });
+      });
+
+      await Promise.all(pricePromises);
+      renderRows(rows);
+      $('scanInfo').textContent = '扫描时间 '+now()+' | 展厅配置 '+(cal.filter(function(i){return i.hallTicketPoolVOS;}).length)+' 天有数据';
+
+      if (availableFound){
+        log('🎉 发现余票！');
+        if ($('autoBlock').checked && st.timer){
+          stopMon();
+          log('已自动停止监控，弹出验证码...');
+          openVerify(firstAvailCtx);
+        } else if (firstAvailCtx){
+          st.ctx = firstAvailCtx; // 记录上下文，供手动点“立即获取验证码”使用
+        }
+      } else {
+        $('monStatus').textContent = '正常：暂无余票 '+now();
+      }
+    }catch(e){
+      log('扫描异常：'+e.message);
+      $('monStatus').textContent = '异常：'+e.message;
+    }
+  }
+
+  function renderRows(rows){
+    var tb = $('tblBody');
+    if (!rows.length){ tb.innerHTML='<tr><td colspan="6" style="text-align:center;color:#999">本次无展厅数据（hallTicketPoolVOS 为 null）</td></tr>'; return; }
+    tb.innerHTML = rows.map(function(r){
+      var cls = r.pool>0 ? ' class="avail"' : '';
+      var badge = r.pool>0 ? '<span class="badge g">'+r.pool+'</span>' : '<span class="badge r">0</span>';
+      return '<tr'+cls+'><td>'+r.hallName+'</td><td>'+r.schedName+'</td><td>'+r.hallId+'</td><td>'+r.schedId+'</td><td>'+badge+'</td><td>'+(r.priceIds||'-')+'</td></tr>';
+    }).join('');
+  }
+
+  function startMon(){
+    if (st.timer) return;
+    var base = parseFloat($('interval').value)||2.5;
+    log('开始监控，间隔≈'+base+'s');
+    $('startBtn').disabled=true; $('stopBtn').disabled=false;
+    $('monStatus').textContent='监控中...';
+    var loop = function(){
+      scanOnce().finally(function(){
+        if (!st.timer) return;
+        var jitter = base*(0.85+Math.random()*0.3);
+        st.timer = setTimeout(loop, jitter*1000);
+      });
+    };
+    st.timer = setTimeout(loop, 0);
+  }
+  function stopMon(){
+    if (st.timer){ clearTimeout(st.timer); st.timer=null; }
+    $('startBtn').disabled=false; $('stopBtn').disabled=true;
+    $('monStatus').textContent='已停止';
+  }
+  $('startBtn').addEventListener('click', startMon);
+  $('stopBtn').addEventListener('click', function(){ stopMon(); log('手动停止监控'); });
+  $('onceBtn').addEventListener('click', scanOnce);
+
+  // ---------- getBlock 验证码 ----------
+  // 源码 verifyRefresh: nonce = aes(`${userId}:${ts}:${date}:${hallId}:${scheduleId}:${platform}`, key)
+  //   ts   = 腾讯校时接口秒数 t ×1000（末尾补000），校时失败时退回本地 Date.now()
+  //          校时接口: GET https://vv.video.qq.com/checktime?otype=json
+  //                    -> QZOutputJson={"s":"o","t":1785402089,...};  取 t
+  //   date = chooseDate.replace(/-/g,'/')  ->  yyyy/MM/dd
+  //   platform = 2（非扫码）    key = AyrKJRXPO3nR5Abc
+  async function fetchServerTs(){
+    try{
+      var r = await fetch(API+'/api/checktime');
+      var j = await r.json();
+      if (j && j.t){
+        if (j.fallback) log('校时接口失败，使用本地时间 t='+j.t);
+        else log('腾讯校时 t='+j.t);
+        return j.t;
+      }
+    }catch(e){ log('校时请求异常，使用本地时间: '+e.message); }
+    return Math.floor(Date.now()/1000);
+  }
+
+  async function buildNonce(ctx){
+    var t = await fetchServerTs();
+    var ts = t + '000'; // 秒 ×1000
+    var date = (ctx.date||'').replace(/-/g,'/');
+    var plain = st.userId + ':' + ts + ':' + date + ':' + ctx.hallId + ':' + ctx.scheduleId + ':2';
+    log('nonce明文: '+plain);
+    return aesEnc(plain, NONCE_KEY);
+  }
+
+  async function openVerify(ctx){
+    if (!st.token){ alert('请先登录'); return; }
+    // 无上下文时，尝试用页面上第一条有余票的行；否则用手动输入
+    if (!ctx || !ctx.hallId){
+      ctx = st.ctx;
+    }
+    if (!ctx || !ctx.hallId){
+      var h = prompt('未检测到余票上下文，请手动输入 hallId,scheduleId,date(yyyy-MM-dd)\n例如: 1,3,2026-07-31');
+      if (!h) return;
+      var a = h.split(',');
+      ctx = { hallId: (a[0]||'').trim(), scheduleId: (a[1]||'').trim(), date: (a[2]||'').trim() };
+    }
+    st.ctx = ctx;
+    log('验证码上下文: hallId='+ctx.hallId+' scheduleId='+ctx.scheduleId+' date='+ctx.date);
+    $('mask').style.display='flex';
+    $('vInfo').textContent='正在请求 getBlock ...';
+    $('vCipher').textContent='pointJson(加密): —';
+    st.points = [];
+    clearPts();
+    try{
+      var nonce = await buildNonce(ctx);
+      log('getBlock nonce='+nonce.slice(0,24)+'...');
+      var url = API+'/api/getBlock?nonce='+encodeURIComponent(nonce)+'&platform=2&docType=1';
+      var r = await fetch(url, { headers:{ Authorization: st.token } });
+      var j = await r.json();
+      if (j.code !== 200 || !j.data){ $('vInfo').textContent='getBlock 失败：'+(j.msg||j.error||('code '+j.code)); log('getBlock 失败：'+JSON.stringify(j).slice(0,200)); return; }
+      st.verify = j.data;
+      var d = j.data;
+      $('vTips').textContent = d.tips || '请点选出指定的图案';
+      $('vImg').src = 'data:image/jpeg;base64,'+d.originalImageBase64;
+      if (d.jigsawImageBase64){
+        $('jigWrap').style.display='block';
+        $('vJig').src = 'data:image/jpeg;base64,'+d.jigsawImageBase64;
+      } else { $('jigWrap').style.display='none'; }
+      $('vInfo').textContent = '验证码已加载。点击图片选择目标（secretKey='+d.secretKey+'）';
+      log('getBlock 成功，captchaToken='+d.token);
+    }catch(e){
+      $('vInfo').textContent='getBlock 异常：'+e.message;
+      log('getBlock 异常：'+e.message);
+    }
+  }
+  $('blockBtn').addEventListener('click', openVerify);
+  $('vRefresh').addEventListener('click', openVerify);
+  $('vClose').addEventListener('click', function(){ $('mask').style.display='none'; });
+  $('vReset').addEventListener('click', function(){ st.points=[]; clearPts(); updatePointOut(); });
+
+  function clearPts(){
+    Array.prototype.slice.call($('panel').querySelectorAll('.pt')).forEach(function(el){ el.remove(); });
+  }
+
+  $('panel').addEventListener('click', function(e){
+    if (!st.verify) return;
+    var rect = $('vImg').getBoundingClientRect();
+    var px = e.clientX - rect.left;   // 面板固定 310x155，1:1
+    var py = e.clientY - rect.top;
+    px = Math.max(0, Math.min(310, px));
+    py = Math.max(0, Math.min(155, py));
+    st.points.push({ px: px, py: py });
+    var i = st.points.length;
+    var dot = document.createElement('div');
+    dot.className='pt'; dot.textContent=i;
+    dot.style.left = px+'px'; dot.style.top = py+'px';
+    $('panel').appendChild(dot);
+    updatePointOut();
+  });
+
+  function updatePointOut(){
+    if (!st.verify){ return; }
+    // 单点点选：pointJson = {x: px-10, y: py-10}
+    // 多点(文字点选)：pointVOS 数组，x 需 +10（源码 forEach t.x+=10），此处直接给原始像素-10再+10 → 保持像素；为通用起见按单点处理最后一个点
+    if (!st.points.length){ $('vInfo').textContent='点击图片选择目标 →'; $('vCipher').textContent='pointJson(加密): —'; return; }
+    var last = st.points[st.points.length-1];
+    var out = { x: last.px - OFFSET, y: last.py - OFFSET };
+    var plain = JSON.stringify(out);
+    var cipher = st.verify.secretKey ? aesEnc(plain, st.verify.secretKey) : plain;
+    st.lastPointJson = cipher; // 保存供下单使用
+    $('vInfo').textContent = '图上像素 ('+last.px.toFixed(1)+','+last.py.toFixed(1)+') → pointJson明文 '+plain;
+    $('vCipher').textContent = 'pointJson(加密): '+cipher+'\ncaptchaToken: '+st.verify.token;
+    log('生成 pointJson: '+plain+' → '+cipher.slice(0,32)+'...');
+  }
+
+  // ---------- 提交下单 placeOrder ----------
+  // body 关键字段（对照抓包）：
+  //   pointJson    = 加密后的点选坐标
+  //   captchaToken = getBlock 返回的 token
+  //   deviceToken  = TDID /jprx 返回的 msgBlock（本地代理 /api/deviceToken 换取）
+  //   ticketInfoList[].{hallId,hallScheduleId,ticketPriceId,certificateInfo,userName,useDate,...}
+  $('odSubmit').addEventListener('click', async function(){
+    if (!st.verify || !st.lastPointJson){ alert('请先完成验证码点选'); return; }
+    if (!st.ctx || !st.ctx.hallId){ alert('缺少余票上下文'); return; }
+    var name = $('odName').value.trim();
+    var cert = $('odCert').value.trim();
+    var priceId = ($('odPriceId').value.trim() || '');
+    if (!name || !cert || !priceId){ alert('请填写姓名 / 证件号 / ticketPriceId'); return; }
+
+    var btn = this; btn.disabled = true;
+    $('odInfo').textContent = '正在获取 deviceToken（TDID 两阶段）...';
+    log('下单：请求 deviceToken ...');
+    try{
+      var dtR = await fetch(API+'/api/deviceToken');
+      var dt = await dtR.json();
+      if (!dt.ok || !dt.deviceToken){
+        $('odInfo').textContent = 'deviceToken 获取失败：ret='+dt.ret+' '+(dt.error||'');
+        log('deviceToken 失败：'+JSON.stringify(dt).slice(0,200));
+        btn.disabled=false; return;
+      }
+      log('deviceToken='+dt.deviceToken.slice(0,32)+'...');
+
+      var date = st.ctx.date;               // yyyy-MM-dd
+      var useDate = date + ' 00:00:00';
+      var body = {
+        useTicketType: 1, poolFlag: 1, realNameFlag: 1, platform: 2,
+        ticketNum: 1, date: date, childTicketNum: 0, saleMode: 1,
+        pointJson: st.lastPointJson,
+        captchaToken: st.verify.token,
+        scanToken: null,
+        ticketInfoList: [{
+          status: 0, saleMode: 1, platform: 2,
+          hallId: Number(st.ctx.hallId),
+          hallScheduleId: Number(st.ctx.scheduleId),
+          cinemaFlag: 0,
+          ticketPriceId: Number(priceId),
+          certificate: 1, certificateInfo: cert,
+          userName: name, useDate: useDate,
+          isChildFreeTicket: 0, realNameFlag: 1
+        }],
+        deviceToken: dt.deviceToken,
+        p: 'wxmini'
+      };
+      $('odInfo').textContent = '正在提交 placeOrder ...';
+      log('placeOrder body: '+JSON.stringify(body).slice(0,160)+'...');
+      var r = await fetch(API+'/api/placeOrder', {
+        method:'POST', headers:{ 'Content-Type':'application/json', Authorization: st.token },
+        body: JSON.stringify(body)
+      });
+      var j = await r.json();
+      if (j.code === 200 && j.data){
+        $('odInfo').textContent = '✅ 下单成功！订单号 '+j.data.orderNumber+' | 场次 '+j.data.schduleDate;
+        log('🎉 下单成功：'+JSON.stringify(j.data));
+      } else {
+        $('odInfo').textContent = '下单返回：'+(j.msg||j.error||('code '+j.code));
+        log('placeOrder 返回：'+JSON.stringify(j).slice(0,300));
+      }
+    }catch(e){
+      $('odInfo').textContent = '下单异常：'+e.message;
+      log('下单异常：'+e.message);
+    }finally{
+      btn.disabled = false;
+    }
+  });
+
+})();
+</script>
+</body>
+</html>

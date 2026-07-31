@@ -1,0 +1,574 @@
+{
+  "subPackages": [
+    {
+      "root": "subPages/ticket/"
+    },
+    {
+      "root": "subPages/explain/"
+    },
+    {
+      "root": "subPages/activity/"
+    },
+    {
+      "root": "subPages/order/"
+    },
+    {
+      "root": "subPages/invoice/"
+    }
+  ],
+  "entryPagePath": "pages/index/index.html",
+  "pages": [
+    "pages/index/index",
+    "pages/index/yuyue/index",
+    "pages/index/jiangjiefuwu/index",
+    "pages/index/canyin/index",
+    "pages/index/wenchuang/index",
+    "pages/index/fuwu/index",
+    "pages/index/kecheng/index",
+    "pages/index/msg/index",
+    "pages/index/msg/detail",
+    "pages/login/index",
+    "pages/register/index",
+    "pages/report/index",
+    "pages/report/lists",
+    "pages/guide/route/exhibiteHallSel",
+    "pages/guide/route/pathplanning",
+    "pages/guide/route/pathChoice",
+    "pages/guide/index",
+    "pages/daxiMaps/index",
+    "pages/user/index",
+    "pages/exhibit/exhibit",
+    "pages/exhibit/Related_exhibits/index",
+    "pages/exhibit/travels/index",
+    "pages/exhibit/videos/videos",
+    "pages/exhibit/comment/index",
+    "pages/exhibit/audioTour/index",
+    "pages/exhibit/detail/index",
+    "pages/feedback/index",
+    "pages/user/myFavorite",
+    "pages/user/myTrip",
+    "pages/user/myComments",
+    "pages/user/media",
+    "pages/user/setting/setting",
+    "pages/user/setting/userinfo",
+    "pages/user/setting/setNickname",
+    "pages/user/trajectory/list",
+    "pages/user/trajectory/dtl",
+    "pages/webView/scan",
+    "pages/guide/guideEngine/index",
+    "pages/guide/rengong/index",
+    "pages/explanation/index",
+    "pages/explanation/detail/index",
+    "pages/guideMap/index",
+    "pages/webView/home",
+    "pages/index/shiwu/index",
+    "pages/index/shiwu/dtl",
+    "pages/index/shiwu/add/index",
+    "pages/index/position/index",
+    "pages/location/index",
+    "pages/pay/pay",
+    "pages/webView/orderDetail",
+    "pages/face/index",
+    "pages/login/waiting",
+    "pages/webView/entrance",
+    "pages/busy/index",
+    "pages/login/privicy",
+    "pages/user/setting/cancelAccount/index",
+    "pages/user/setting/cancelAccount/check",
+    "pages/user/setting/cancelAccount/reConfirm",
+    "pages/user/contacts/contacts",
+    "pages/user/contacts/contactsForm",
+    "subPages/ticket/personal/home/index",
+    "subPages/ticket/personal/index/index",
+    "subPages/ticket/personal/fillInfo/fillInfo",
+    "subPages/ticket/personal/success/success",
+    "subPages/ticket/personal/confirm/confirm",
+    "subPages/ticket/personal/riskgo/riskgo",
+    "subPages/ticket/notice/list",
+    "subPages/ticket/notice/detail",
+    "subPages/ticket/personal/realName/index",
+    "subPages/explain/entry/entry",
+    "subPages/explain/selectTicket/selectTicket",
+    "subPages/explain/fillInfo/index",
+    "subPages/explain/success/success",
+    "subPages/explain/explainDtl/explainDtl",
+    "subPages/activity/index/index",
+    "subPages/activity/introduce/introduce",
+    "subPages/activity/fillInfo/fillInfo",
+    "subPages/activity/confirm/confirm",
+    "subPages/activity/success/success",
+    "subPages/order/order",
+    "subPages/order/detail",
+    "subPages/invoice/fillInfo/fillInfo",
+    "subPages/invoice/index/index",
+    "subPages/invoice/invoiceDetail/invoiceDetail",
+    "subPages/invoice/invoiceList/invoiceList",
+    "subPages/invoice/success/success",
+    "subPages/invoice/ticketList/ticketList",
+    "subPages/invoice/wxCard"
+  ],
+  "page": {
+    "pages/index/index.html": {
+      "window": {
+        "navigationStyle": "custom",
+        "navigationBarTextStyle": "white"
+      }
+    },
+    "pages/index/yuyue/index.html": {
+      "window": {
+        "navigationStyle": "custom"
+      }
+    },
+    "pages/index/jiangjiefuwu/index.html": {
+      "window": {
+        "navigationStyle": "custom"
+      }
+    },
+    "pages/index/canyin/index.html": {
+      "window": {
+        "navigationStyle": "custom"
+      }
+    },
+    "pages/index/wenchuang/index.html": {
+      "window": {
+        "navigationStyle": "custom"
+      }
+    },
+    "pages/index/fuwu/index.html": {
+      "window": {
+        "navigationStyle": "custom"
+      }
+    },
+    "pages/index/kecheng/index.html": {
+      "window": {
+        "navigationBarTitleText": "国博好课"
+      }
+    },
+    "pages/index/msg/index.html": {
+      "window": {}
+    },
+    "pages/index/msg/detail.html": {
+      "window": {
+        "navigationBarTitleText": "消息详情"
+      }
+    },
+    "pages/login/index.html": {
+      "window": {
+        "navigationBarTitleText": "登录"
+      }
+    },
+    "pages/register/index.html": {
+      "window": {}
+    },
+    "pages/report/index.html": {
+      "window": {}
+    },
+    "pages/report/lists.html": {
+      "window": {}
+    },
+    "pages/guide/route/exhibiteHallSel.html": {
+      "window": {
+        "navigationBarTitleText": ""
+      }
+    },
+    "pages/guide/route/pathplanning.html": {
+      "window": {
+        "disableScroll": true,
+        "navigationBarTitleText": ""
+      }
+    },
+    "pages/guide/route/pathChoice.html": {
+      "window": {
+        "navigationBarTitleText": "自定义路线"
+      }
+    },
+    "pages/guide/index.html": {
+      "window": {
+        "navigationStyle": "custom",
+        "disableScroll": true
+      }
+    },
+    "pages/daxiMaps/index.html": {
+      "window": {}
+    },
+    "pages/user/index.html": {
+      "window": {
+        "navigationBarTitleText": "我的"
+      }
+    },
+    "pages/exhibit/exhibit.html": {
+      "window": {}
+    },
+    "pages/exhibit/Related_exhibits/index.html": {
+      "window": {
+        "navigationBarTitleText": "相关展品"
+      }
+    },
+    "pages/exhibit/travels/index.html": {
+      "window": {
+        "navigationBarTitleText": "添加行程"
+      }
+    },
+    "pages/exhibit/videos/videos.html": {
+      "window": {
+        "navigationBarTitleText": "相关视频"
+      }
+    },
+    "pages/exhibit/comment/index.html": {
+      "window": {
+        "navigationBarTitleText": "留言"
+      }
+    },
+    "pages/exhibit/audioTour/index.html": {
+      "window": {
+        "navigationBarTitleText": "相关音频"
+      }
+    },
+    "pages/exhibit/detail/index.html": {
+      "window": {
+        "navigationBarTitleText": "展品详情"
+      }
+    },
+    "pages/feedback/index.html": {
+      "window": {
+        "navigationBarTitleText": "意见反馈"
+      }
+    },
+    "pages/user/myFavorite.html": {
+      "window": {
+        "navigationBarTitleText": "我的收藏"
+      }
+    },
+    "pages/user/myTrip.html": {
+      "window": {
+        "navigationBarTitleText": "我的行程"
+      }
+    },
+    "pages/user/myComments.html": {
+      "window": {
+        "navigationBarTitleText": "我的评论"
+      }
+    },
+    "pages/user/media.html": {
+      "window": {}
+    },
+    "pages/user/setting/setting.html": {
+      "window": {
+        "navigationBarTitleText": "设置"
+      }
+    },
+    "pages/user/setting/userinfo.html": {
+      "window": {
+        "disableScroll": true
+      }
+    },
+    "pages/user/setting/setNickname.html": {
+      "window": {}
+    },
+    "pages/user/trajectory/list.html": {
+      "window": {}
+    },
+    "pages/user/trajectory/dtl.html": {
+      "window": {}
+    },
+    "pages/webView/scan.html": {
+      "window": {}
+    },
+    "pages/guide/guideEngine/index.html": {
+      "window": {}
+    },
+    "pages/guide/rengong/index.html": {
+      "window": {}
+    },
+    "pages/explanation/index.html": {
+      "window": {
+        "navigationBarTitleText": "展览讲解",
+        "backgroundColor": "#F3F3F3"
+      }
+    },
+    "pages/explanation/detail/index.html": {
+      "window": {
+        "disableScroll": true,
+        "navigationBarBackgroundColor": "#8B3D41",
+        "backgroundColor": "#8B3D41"
+      }
+    },
+    "pages/guideMap/index.html": {
+      "window": {
+        "disableScroll": true
+      }
+    },
+    "pages/webView/home.html": {
+      "window": {}
+    },
+    "pages/index/shiwu/index.html": {
+      "window": {
+        "navigationBarTitleText": "失物列表"
+      }
+    },
+    "pages/index/shiwu/dtl.html": {
+      "window": {
+        "navigationBarTitleText": "失物详情"
+      }
+    },
+    "pages/index/shiwu/add/index.html": {
+      "window": {
+        "navigationBarTitleText": "发布失物招领"
+      }
+    },
+    "pages/index/position/index.html": {
+      "window": {
+        "disableScroll": true
+      }
+    },
+    "pages/location/index.html": {
+      "window": {}
+    },
+    "pages/pay/pay.html": {
+      "window": {}
+    },
+    "pages/webView/orderDetail.html": {
+      "window": {}
+    },
+    "pages/face/index.html": {
+      "window": {}
+    },
+    "pages/login/waiting.html": {
+      "window": {
+        "navigationBarTitleText": ""
+      }
+    },
+    "pages/webView/entrance.html": {
+      "window": {}
+    },
+    "pages/busy/index.html": {
+      "window": {}
+    },
+    "pages/login/privicy.html": {
+      "window": {}
+    },
+    "pages/user/setting/cancelAccount/index.html": {
+      "window": {
+        "navigationBarTitleText": "账号注销"
+      }
+    },
+    "pages/user/setting/cancelAccount/check.html": {
+      "window": {
+        "navigationBarTitleText": "验证身份"
+      }
+    },
+    "pages/user/setting/cancelAccount/reConfirm.html": {
+      "window": {
+        "navigationBarTitleText": "账号注销"
+      }
+    },
+    "pages/user/contacts/contacts.html": {
+      "window": {
+        "navigationBarTitleText": "常用联系人",
+        "enablePullDownRefresh": true
+      }
+    },
+    "pages/user/contacts/contactsForm.html": {
+      "window": {
+        "navigationBarTitleText": "常用联系人",
+        "enablePullDownRefresh": true
+      }
+    },
+    "subPages/ticket/personal/home/index.html": {
+      "window": {
+        "styleIsolation": "apply-shared",
+        "navigationBarTitleText": "",
+        "navigationBarTextStyle": "white",
+        "navigationStyle": "custom"
+      }
+    },
+    "subPages/ticket/personal/index/index.html": {
+      "window": {
+        "navigationBarTitleText": "预约服务系统"
+      }
+    },
+    "subPages/ticket/personal/fillInfo/fillInfo.html": {
+      "window": {
+        "navigationBarTitleText": "预约服务系统"
+      }
+    },
+    "subPages/ticket/personal/success/success.html": {
+      "window": {
+        "navigationBarTitleText": "预约服务系统"
+      }
+    },
+    "subPages/ticket/personal/confirm/confirm.html": {
+      "window": {
+        "navigationBarTitleText": "预约服务系统"
+      }
+    },
+    "subPages/ticket/personal/riskgo/riskgo.html": {
+      "window": {}
+    },
+    "subPages/ticket/notice/list.html": {
+      "window": {
+        "navigationBarTitleText": "公告通知"
+      }
+    },
+    "subPages/ticket/notice/detail.html": {
+      "window": {
+        "navigationBarTitleText": "公告详情"
+      }
+    },
+    "subPages/ticket/personal/realName/index.html": {
+      "window": {
+        "styleIsolation": "apply-shared",
+        "navigationBarTitleText": "",
+        "navigationBarTextStyle": "white",
+        "navigationStyle": "custom"
+      }
+    },
+    "subPages/explain/entry/entry.html": {
+      "window": {
+        "navigationBarTitleText": "预约服务系统"
+      }
+    },
+    "subPages/explain/selectTicket/selectTicket.html": {
+      "window": {}
+    },
+    "subPages/explain/fillInfo/index.html": {
+      "window": {}
+    },
+    "subPages/explain/success/success.html": {
+      "window": {}
+    },
+    "subPages/explain/explainDtl/explainDtl.html": {
+      "window": {}
+    },
+    "subPages/activity/index/index.html": {
+      "window": {
+        "navigationBarTitleText": "活动预约"
+      }
+    },
+    "subPages/activity/introduce/introduce.html": {
+      "window": {
+        "navigationBarTitleText": "活动详情"
+      }
+    },
+    "subPages/activity/fillInfo/fillInfo.html": {
+      "window": {
+        "navigationBarTitleText": "填写信息"
+      }
+    },
+    "subPages/activity/confirm/confirm.html": {
+      "window": {}
+    },
+    "subPages/activity/success/success.html": {
+      "window": {}
+    },
+    "subPages/order/order.html": {
+      "window": {
+        "navigationBarTitleText": "我的预约"
+      }
+    },
+    "subPages/order/detail.html": {
+      "window": {
+        "navigationBarTitleText": "订单详情"
+      }
+    },
+    "subPages/invoice/fillInfo/fillInfo.html": {
+      "window": {}
+    },
+    "subPages/invoice/index/index.html": {
+      "window": {}
+    },
+    "subPages/invoice/invoiceDetail/invoiceDetail.html": {
+      "window": {}
+    },
+    "subPages/invoice/invoiceList/invoiceList.html": {
+      "window": {
+        "enablePullDownRefresh": true
+      }
+    },
+    "subPages/invoice/success/success.html": {
+      "window": {}
+    },
+    "subPages/invoice/ticketList/ticketList.html": {
+      "window": {}
+    },
+    "subPages/invoice/wxCard.html": {
+      "window": {}
+    }
+  },
+  "permission": {
+    "scope.userLocation": {
+      "desc": "你的位置信息将用于小程序位置展示"
+    }
+  },
+  "global": {
+    "window": {
+      "backgroundTextStyle": "light",
+      "navigationBarBackgroundColor": "#fff",
+      "navigationBarTitleText": "中国国家博物馆",
+      "navigationBarTextStyle": "black"
+    }
+  },
+  "plugins": {
+    "turingCore": {
+      "version": "2.2.0",
+      "provider": "wx63af045606be281d",
+      "subpackage": "__APP__"
+    },
+    "captcha4": {
+      "version": "2.7.3",
+      "provider": "wx1629d117cf9be937",
+      "subpackage": "__APP__"
+    },
+    "daxi-location": {
+      "version": "1.0.6",
+      "provider": "wxe51129e09bb46147",
+      "subpackage": "__APP__"
+    }
+  },
+  "tabBar": {
+    "custom": true,
+    "color": "#A0A0A0",
+    "selectedColor": "#8A2B2D",
+    "backgroundColor": "#ffffff",
+    "list": [
+      {
+        "pagePath": "pages/index/index.html",
+        "text": "展览",
+        "iconData": "iVBORw0KGgoAAAANSUhEUgAAAGgAAABoBAMAAADvMqiSAAAAElBMVEUAAADQ0NDQ0NDQ0NDNzc3Z2dmN/1AOAAAABXRSTlMAIFvG/sUVxw0AAAHRSURBVHja7ZjbkcMgDEVNB8YVLKQDRCoAV2DTfysLOLM2D1uCJDM7mdwP/525QgIhPAwfqQm0PcqAQBkuYXZHrSBH3ChlAoVaybvLtQjMqjDyVgqFXCnAIF2BzA8CzRVo+UJfqIA451L4TwvE5Q28lOR0yJ9n0G41AFWqCglvM2+nGBQnQse+UWsZNWiFQw9YKi2jBmW+ZYA45KBoNASotCJApRUFWlQH5PIEkqC859Ig1QHlPZcGGdEBLV1Quqg3QmsPlKXvnZDpgdJW+BmQ+dd1Wl+wYXUPBD2HEOaO414ZEvHGMsHc3sKKwZfSLAceb+Sj8LY8MC5T3e7oBVAbuvFbrRDLrRbF0TcBy60IRiE191ajuKp0JBgpUBIg4b2y1+5qzDl9IPmByp0NVGfUtI1uooGJQ2JUA8JYM8JT0Yht38ZpNAjn+CSLs+In4ItasQeSPGKj4znGQnmyZ+/29A31Gs8iA7B1mZOSMV9Pbe0FNVb3gL1ShWIYU6M4ygQqzQabLtazU8me98ERmPDbYWwL7hHgMTgSk1j5nUCD1t2KuKJopURrdDGBf2nQdAiaowtUS2Fz6EZfkk/FM1BLdDtkOyBt3+1kn8teiz7yh+UvYhmLzpq5LqIAAAAASUVORK5CYII=",
+        "selectedIconData": "iVBORw0KGgoAAAANSUhEUgAAAGgAAABoAgMAAABgcl0yAAAADFBMVEUAAACHKSmJKi2KKy20WmU+AAAABHRSTlMAMpv9xcWKFAAAAYFJREFUeNrt1T12gzAMAGAy0KE7GdrLcAQPOAO5AQy9TLhBGTADR+A0HZK9Qxis8mMjkGzaZMjLUK3fsy3bshUEj4yDmqIUVHaWKkZhZkgljKyowk8lpde/UPVPa5Iy9pCUK1tQmDZaSScdagBdxi46Qh9d4iDVDAQ4DKkeBa6C0zQI9IlTOxGUnIzAOaZUW7oyaixpQckuBXC6gWaBLz99E6qRbIq3UUeoQdIbJO4heHq6b18bB9X9fikvfgodRD89XjbzL4r0Sf9eXofj2x4iZ4UdhIaOdFsYe/aI8H9mTw97QU4fLEZqlhKc9i35HBaLjTPqwtmThouphIuitIWLjJ2tTGbKI0HUH4pbpgPzDBmDtziZml4lBZXMlMClIiazudo6JemWsETLZNmBl68BugJ3F+WwinOCg9o14RmHZFA/zCYZNZQ6k+QuBRbmQvl884x8vrl/0PwwR9dSphpdS/WLjfThoosviz4PP+lF1dIY6A289P5A2khj79/Xk8cPOtLlH8tSG2IAAAAASUVORK5CYII="
+      },
+      {
+        "pagePath": "pages/guide/index.html",
+        "text": "导览",
+        "iconData": "iVBORw0KGgoAAAANSUhEUgAAAJQAAACUBAMAAACHEh3nAAAAGFBMVEUAAAAAAAA0Dg5FERdrISNxIyOJKiyLKy3WQB/5AAAACHRSTlMDGjVZfKnT/pwinWoAAARvSURBVHjatZpbguogDIaLZwOhs4Epdd7PVGcD3hYwYz0bUFzB1O0f2mqLJQTQyGOtX/+ESxIgy0JNXlv2dJOShyUnjQ30MExItAGPpIeECUk0YCMlsQKkBFaQFM2KIMWyZFTjI8WwRCwK2EhhlkxobKICspJINEsmNjZRlCwpuWSJdBSwifLJEuR3k9Zn8sNJstDPZlKpcrFYVErJLFoW/lFVbuu27SsVLQsTBVIta32+XC6NrtdKijhZ6Gtqq/Wlb1rvVaSFyEtCLQ+XsZ3WCmIsRETBbN4Zd2uNXr2LCFmYqNLW1OmqYmQhH8u35wmq+SlEEIW8IeZTUT5ZkC7KyNqHZcV4yi+Ltg9mX2cE1fxgnQh0/71hooysItCHyK/zM4pqVjQq2r6whQgqx+1rLSRRiOTyn/V3W+BvRVpIu6rR2pqLtLMw+0ZXNfVms6nP9OQBArWzRqUyi/LouiOFkpTX9dr8FfK5Jv0uY7x+VN07ahfld8rrzQpaESCsJ36UoFCnz/5L2TCRcBT4UPnHDXW8Dm6Y3Sxsvosk1G0sDPMExMfwyI+SFGrl2IyjpHcs0CjxepTgQcHLUY+4PYwaBsPsK4zCnudzYoiuCl+ehT5PnjgRqNjp7EeNUfBYdQ4th0Xm9JmEspY+42XIhLVA40sfgdrZyZ6y07+jF4WnqnaYOO0320MgTHSjwVMl2HFeD7kt4XWD8jx/80bnT19V5UPNdh6Uz1UEKin9oFCJSRGJsodDnH1+VbkngSySVZkAjae1Mh2FOp5wOqUKy7Y9lUkIBa63vJMmgIovl8IoRxYtikI5smhRKKqd4+DK6kW167Ov+kdrZlW4sq6icqXiValysVm0dfKdrKunlPkN3yhAtObLWutTF+1sWb2ofH7Qul4XUauoedlIaY5VkdmyOlFZXu7aH09IWAU3TOS7c1+QVsbDo6xWFIiyL12bYxERcYbY2eyVFIOsVhRItR3SEgiirJVY/6jRW52n1HaIF0dnXrsoKz602x1ZL8uIMmWAFQ3daOEaaJdcp/V71ssyorLZ8kAVYFPU/QBvTqYbZ18mDv68m847nKn56KRq99Vp141quTGW3jrPV4+7Wd8k0BiWGUzKDLEJybFwinJXYb03groBpem12UG5IUvvu9JySnLCGExLgNINDbo2mUyt3ZBRUdXEWBPd/eeuDB8ff4MgULkv6QgH6mkR502F8PSIqgc9OcclnIlMUGn23VsI92W4fyMmvD0zqejhz78k1O/fV6LEMG0SDRynznRPBq7LemwPWm4HZ9NpfohnmbBD7V/ly2iWWWILBDV6Ty3r2LZWgb2+7vggpt0Fe0A3Mx86mH72TB9HPXCu5N3afg6VvQgl2Ox7Tlb2MpRgs+8ZWRxHluwo4Dn+9Ew1wSbqUVlcZ8Xe02K+w2LOI2zGg3XO437GSwicVyMYL2xwXiPhvNzCeOWG8yIQ5/UkzktTjFe5OC+YcV5747yMx3lFkPXiIud1StZLnqxXTy1W2Ef/AfuaVSY5g7EpAAAAAElFTkSuQmCC",
+        "selectedIconData": "iVBORw0KGgoAAAANSUhEUgAAAJQAAACUBAMAAACHEh3nAAAAGFBMVEV2FBSCFR+GGyGHGyH+/f2cRUrFkpXewsNqv0UoAAAABHRSTlMANIr+C5iEDAAABDFJREFUeNq9muuNqzAQhZNbQaCCBToA0QFaCkCmgsRpAEH7l1fA2POwnbl3fq12tZ/OGRt7bM/tRsQ9yfO82mP+MXnc4uKezKSiOqKcWXGwe2pyPrTsESEpzSsg8ixYGAzaYKHmqgpnPUJIRUVE6c9iSAEsluTN8iD5snxIC4snJXnlFXnC2vMkzawHl6jKO5h0JYU/qkxk7LEW0yooMhl7tMV7oCgi86GicFlhOScznxbhKPj7iRGFyEqKGBQkK3z4UFn3Ig5VPr6d6MSUjxUFyIoW5cgiZoL6hGficX9KaT1Nk9Yoy3KI+atVr6dmiUm/VOfhEBWl+g20wl7KQxaGUv3QnDEirAsK8VdfSE3TvjrOITZ+6t1cY1TcGCL+bFGoLMMh4k89Gzt+FeMQRtXvxg3dkSjEHyAKk3U4hFF130ABZutABfibB5F0CKOc4fsMIoEK8kc7RFBvBDUSqD/w+A0IqgXH8AdP1WWmz+sVN+Mz/AM0UzVqrd9MstbPkE3VuC7Hb49kIajn1ZBh+BdHMVnfF5ZTFpz3Bz9Bjynp/sbJO4M67ByWURQ3gEeSz4HAhpD7bI7/A35l5Z1BGW4Oz/8BlVQyqCrB1r1wVCaJyqVQOYfyngweKN8pOqOQGub8cJS9LcIfTlViKDVYi+a5yrQqEPVEF5lfDIVVjufytBZoRtE2InUkj1qKPaV6ZkGmUIHbBIG67PPtNHA7PYUCSyIi6wQqbKOnUUHlB4lCiyL0rIOjgko1BgXKal8RqJCylkOBicdFUaiAIwCLAmQRokiUK4sSRaMcWZSo6lYEyCJFlTTKkkWKQlC12o/cF1m7KKXA83gJbl7nvcJF1iYKu3QA98F59Z2mcf/HpyWq3v6ovFD1to6PqrvK2irlbecZ3bTlQPmxLwnttmsdsjZR6j0gCwRUyXxWhFYrU9aqQ+kBW+Ezt1RzdsDnKYraDRO3gDzPERtrl7WIMi9D7DMFVIuaK96a3TXRozrGA3YIoK4TfBnGup8PcTOzvl6GWGO4oHLU36f4UL1enFrXKpbD5RSXkhvNPIzdMsFnTXqgzuPuGcdZV7YpYUwDxGHmHOLcLWtmLeGQrOngHi2B03e7VjIDvbm6p1R4e79UMrDDDZX7FB3cRr3dhqU+pRBXHmX2lUXdDwEoc9P/sS9SgvyZDt07mfoZhPq1UUay6iEI1Xb4/dXXqNNhrEHgri827Scq/XYyQPei5gGE1XRuhhl08btup16hT5Jx8Wt8hrXyjw56UvjikcN+Boh/evF+BYh5yUml/H0ny3p8iXschN/i5B6qJJ/PBB/1JJ8aYx9AoVfsyGfZ5N8+Fgs+YUs+rEfIQvtSwmXhfRZyrRGSDRuSbSSCzS2SLTeCjUCS7UmSTVOSrVyCDWaSbW+SzXiSLYKSjYui7ZSCTZ6irafBDbF/AQqooa7eqInKAAAAAElFTkSuQmCC"
+      },
+      {
+        "pagePath": "pages/index/fuwu/index.html",
+        "text": "便民",
+        "iconData": "iVBORw0KGgoAAAANSUhEUgAAAGgAAABoBAMAAADvMqiSAAAAElBMVEUAAADT09PV1dXV1dXT09PR0dGcYD7eAAAABXRSTlMAF1ak4uP7wSwAAAHMSURBVHja7djNecMgDAZgewPjLlDsDUI6AXiCwP6rFPwrgwCJQy4JR9GPV+ah2G3Xfcd3fM4QYlJPY4xSkxiOYi/GORQ1LMKQzyzOWaMekziL46yMc85oULxG71f0GbfG5L5qPypj9qJ+DEjGncPuKZ9Zrqqe4tT4BNPOW2tRGVC0WkYZuGT4gdBLP8dFeW/uPu17kUGPiub2WMl0oNKVHGwQmfbz6Upb11ko7CCyEqR+kGlnDFK08urOkcfZH9Zdbujf46ws9JDdTxi2d/nQ3p9gdOf72w77+McKbfvHeaRz02de6LGG1BtCag2xNs/vRHto4YVMS8h+QzBkWrb8fSei6cA2/T5NvNDUcEe8JPuuPC8Wzq183ntNlyXroV7Ha6PnvACGwouw1h1n/8CbkLx/8J1LprQEITETIfhR1f+QtsLKoeu4/UUfR6Rdt/HHG4WKv8IolE2/EutUAhEoBKpTCFSlUKhGoVCFykBlKgMVqSxUorJQgSpAeaoAZakilKOKUIaqQDhVgVCqCmFUFUIoApRSBCihSFBMkaCIIkJ3igjdKDIEKTIEKAZ0UQzopFjQQbGgnWJCG8WEVooNBYoNhb9Jtfik/0v9A9KMkzK2QV4GAAAAAElFTkSuQmCC",
+        "selectedIconData": "iVBORw0KGgoAAAANSUhEUgAAAGgAAABoCAMAAAAqwkWTAAAAYFBMVEUAAACLXV2ZPT27g4OFJSW1f3+UQECaRka2f4KJKC2eUFCKKC65gICXQ0OJKiy4f4KKKCu5f4CJKS2pYmORODqRODq4f4CKKiuJKy22e3yLLjCKKy25gIGJKSuZRkioYWLG1AQoAAAAG3RSTlMACxkpMEhMWGxshouOpKSzudPU1tvl5+f1+/1WuBxwAAADE0lEQVR42u2a2XasIBBFG2db4xTjzM3//+Ut0KVoo5YIefI8d2f3Lopx5fV68uSJiRBiu0Gc5nkFyfM0jQPXtoj0o5bjh0lWFDWkKLIkCj1H/tHPWIBhnKpth2FogbWHAowXRsCpm77vuwZYEwqjY7tchlPGtBwWB/aGRJxRhlGmNA3zinznVAps0nxhLGmrNHZFFHH8KKu7/jNNkYSedaITsJIN0nAUWThRVjS9NF0NqCMpAjrVsJ82j93pl1petIfhqbNwf6SIG+ftcBSQCvjXLT+pjzisftFe+c45ECDZwAmTuj/LHgnF4STLCrNzDncics6ASZW+3wif0UnSEXaA8eGk77KmKFBXhM7HchCkSE77+6+jOFDfZKG1LdxhX285PTZ1sh4mmKi5fh8+TOuJixYaORdAdeJbolCM64SrPqwfxM6z3LQ14sP7QZi2yBG67jON0gzCzVUVHz5r/RkUYFpBkQPtEM6gGDFEanXjgxTNoPS851R9+H67gCpjPnwPnEGnQuo+XGkGVa05nzXIoA+rHRJ0zwcPYpxeF6g16AOnPEzX3R2fdTPklTkfqFwhrAzmfGBVzU6XIB0+qyUolq9BWnxgBVoW1SCujHH6Olq2CVe2w2riwA7rCbev1Binz4RjEJy7K1OcOhEPdvb2QKyl3ySH4q2SNh9ohfWFgqyUJg7VLsSKJ5y49PmwG9LnPazSz9leJlbnfJ0csbW3naeR8zlA82NGpY9DKXtqIHvPJvf37RnUZLuPJ0D61uMDf6MpDx5piPsuNYG6UvrIMN/IvK9Sw9LDOF/H71sj6TbolKPFiWI4M4ne6AMU57YTmsPe4tSdRh/fQj4Tqztd8LnjdM3nhtNFH1Wn6z6KTgo+Kk5qPgpOij5XndR9Ljrd8JmcfjBOzOdH2UeoHsrnDgfndN9HIJ343OecO1FNnFMnbZxjJ6qRc+iklbPvRDVz9kj6OTvVM8CROVEjHImTIc7WiRrjbJwMckQnapQjOBnmLE6mOTPJOGci/QFnJP0F50Wcd1m+nedfgJ48eaIh/wGhqUN7U93FQgAAAABJRU5ErkJggg=="
+      }
+    ]
+  },
+  "preloadRule": {
+    "pages/index/index": {
+      "network": "all",
+      "packages": ["subPages/ticket"]
+    }
+  },
+  "requiredBackgroundModes": ["audio"],
+  "renderer": {
+    "allUsed": ["webview"],
+    "default": "webview"
+  },
+  "resolveAlias": {
+    "@/*": "/*"
+  },
+  "requiredPrivateInfos": ["getLocation"],
+  "__usePrivacyCheck__": true,
+  "componentFramework": {
+    "allUsed": ["exparser"],
+    "default": "exparser"
+  }
+}

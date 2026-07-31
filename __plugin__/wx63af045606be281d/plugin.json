@@ -1,0 +1,12 @@
+{
+  "renderer": {
+    "allUsed": ["webview"],
+    "default": "webview"
+  },
+  "componentFramework": {
+    "allUsed": ["exparser"],
+    "default": "exparser"
+  },
+  "page": {},
+  "pages": {}
+}

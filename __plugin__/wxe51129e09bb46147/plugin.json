@@ -1,0 +1,8 @@
+{
+  "renderer": {
+    "allUsed": ["webview"],
+    "default": "webview"
+  },
+  "page": {},
+  "pages": {}
+}
