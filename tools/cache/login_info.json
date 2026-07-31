@@ -1,12 +1,12 @@
 {
-  "savedAt": "2026-07-31 22:08:03",
-  "apiToken": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJsb2dpbl91c2VyX25hbWUiOiLmuLjlrqIgMTUzMDMwMjE5MDkiLCJsb2dpbl9leHBpcmVkX3RpbWUiOjE3ODUzMTU1OTA4MjcsImxvZ2luX3VzZXJfaWQiOjM2NzEyNzYyLCJsb2dpbl91c2VyX2tleSI6IjM2NzEyNzYyOjEwMDc3NGVlLWYyOGMtNDVjOS05NTk3LTk4YWVhMWMzMjNjMyIsImxvZ2luX3VzZXJfYWNjb3VudCI6IjE1MzAzMDIxOTA5In0.5TVMh9ar8j10gHrsi4HDG6w8JCkR65nWqsKJKS0lhmk",
+  "savedAt": "2026-07-31 22:57:10",
+  "apiToken": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJsb2dpbl91c2VyX25hbWUiOiLmuLjlrqIgMTMwNDQ0OTEyMDYiLCJsb2dpbl9leHBpcmVkX3RpbWUiOjE3ODM0MjYwNjk5NTIsImxvZ2luX3VzZXJfaWQiOjM1NjY3MDIwLCJsb2dpbl91c2VyX2tleSI6IjM1NjY3MDIwOmUwYmJiMjk4LWY5ZjItNDAzMC05ZmUxLWQ2OTkzMzIzYzg4NCIsImxvZ2luX3VzZXJfYWNjb3VudCI6IjEzMDQ0NDkxMjA2In0.fWoKIpOh-QEzxEk3-wP90VQLIHttlHzncS8KUWpEZBs",
   "userInfo": {
-    "userId": 36712762,
-    "userName": "15303021909",
-    "nickName": "游客 15303021909",
+    "userId": 35667020,
+    "userName": "13044491206",
+    "nickName": "游客 13044491206",
     "email": "",
-    "phoneNumber": "15303021909",
+    "phoneNumber": "13044491206",
     "avatar": "https://pcticket.chnmuseum.cn/profile/upload/default_image.svg",
     "userType": 1,
     "roleList": []

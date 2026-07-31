@@ -19,7 +19,8 @@ from utils.aes import aes_ecb_b64
 
 
 class CaptchaPicker:
-    """显示验证码原图, 用户点击选择目标图案 (支持多点顺序点选 / 重选 / 确认)。"""
+    """显示验证码原图, 用户点击选择目标图案 (仅支持单点点选 / 重选 / 确认)。"""
+
 
     PANEL_W = 310
     PANEL_H = 155
@@ -58,9 +59,10 @@ class CaptchaPicker:
             except Exception:
                 pass
 
-        self.info = tk.Label(self.root, text="点击图片选择目标 →",
+        self.info = tk.Label(self.root, text="点击图片选择目标 (仅可选一个点) →",
                              font=("Consolas", 9), fg="#555", wraplength=320,
                              justify="left")
+
         self.info.pack(padx=12, pady=6)
 
         btn_frame = tk.Frame(self.root)
@@ -91,14 +93,16 @@ class CaptchaPicker:
     def _on_click(self, event):
         px = max(0, min(self.PANEL_W, event.x))
         py = max(0, min(self.PANEL_H, event.y))
-        self.points.append((px, py))
-        idx = len(self.points)
+        # 仅支持单点点选: 每次点击覆盖之前的选择
+        self.canvas.delete("mark")
+        self.points = [(px, py)]
         r = 11
         self.canvas.create_oval(px - r, py - r, px + r, py + r,
                                 outline="#1abd6c", width=2, fill="", tags="mark")
-        self.canvas.create_text(px, py, text=str(idx), fill="#1abd6c",
+        self.canvas.create_text(px, py, text="1", fill="#1abd6c",
                                 font=("Arial", 10, "bold"), tags="mark")
         self._update_info()
+
 
     def _reset(self):
         self.points = []

@@ -53,7 +53,7 @@ def main():
     log("Step 0: 校验 apiToken (checkToken) ...")
     user_info = api.check_token(session)
     if not user_info:
-        log("❌ apiToken 无效或校验失败, 请更新 bm_config.API_TOKEN 后重试。退出。")
+        log("❌ apiToken 无效或校验失败, 请更新 config.API_TOKEN 后重试。退出。")
         return
     log("✅ 登录有效, 继续执行。")
 

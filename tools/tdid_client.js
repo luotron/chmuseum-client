@@ -318,7 +318,7 @@ function postJprx(body, hostSign, protoLog, stageName) {
       'X-WECHAT-HOSTSIGN': hostSign || buildHostSign(),
       'xweb_xhr': '1',
       'Accept': '*/*',
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36 MicroMessenger/7.0.20.1781(0x6700143B) NetType/WIFI MiniProgramEnv/Windows WindowsWechat/WMPF WindowsWechat(0x63090a13) XWEB/20089',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36 MicroMessenger/7.0.20.1781(0x6700143B) NetType/WIFI MiniProgramEnv/Windows WindowsWechat/WMPF WindowsWechat(0x63090a13) UnifiedPCWindowsWechat(0xf2541721) XWEB/19027',
       'Referer': 'https://servicewechat.com/wx9e2927dd595b0473/100/page-frame.html',
       'Accept-Language': 'zh-CN,zh;q=0.9',
     };

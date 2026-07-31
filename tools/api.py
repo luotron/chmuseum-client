@@ -79,27 +79,79 @@ def _save_login_info(user_info):
 # ============================================================================
 #  1. 腾讯校时 + nonce
 # ============================================================================
-def fetch_server_ts(session):
-    """腾讯校时: GET checktime -> QZOutputJson={..."t":1785402089...}; 取 t (秒)。失败退回本地。"""
+def _parse_checktime(text):
+    """
+    解析腾讯校时响应:
+        QZOutputJson={"s":"o","t":1785402089,"ip":"14.26.171.215","pos":"---","rand":"..."};
+    返回 (t_秒:int|None, ip:str|None)。
+    """
+    t_val = None
+    ip_val = None
+    key = '"t":'
+    idx = text.find(key)
+    if idx >= 0:
+        num = ""
+        for ch in text[idx + len(key):]:
+            if ch.isdigit():
+                num += ch
+            elif num:
+                break
+        if num:
+            t_val = int(num)
+    key_ip = '"ip":"'
+    idx_ip = text.find(key_ip)
+    if idx_ip >= 0:
+        start = idx_ip + len(key_ip)
+        end = text.find('"', start)
+        if end > start:
+            ip_val = text[start:end]
+    return t_val, ip_val
+
+
+def fetch_server_time_ip(session):
+    """
+    腾讯校时: GET checktime。返回 (t_秒, ip)。
+      t 失败退回本地时间; ip 失败返回 None。
+    """
     try:
         resp = session.get(cfg.CHECKTIME_URL, headers=cfg.build_headers(), timeout=5)
         if resp.status_code == 200:
-            text = resp.text
-            key = '"t":'
-            idx = text.find(key)
-            if idx >= 0:
-                start = idx + len(key)
-                num = ""
-                for ch in text[start:]:
-                    if ch.isdigit():
-                        num += ch
-                    elif num:
-                        break
-                if num:
-                    return int(num)
+            t_val, ip_val = _parse_checktime(resp.text)
+            if t_val is None:
+                t_val = int(time.time())
+            return t_val, ip_val
     except Exception as e:
         log("校时失败, 使用本地时间: %s" % e)
-    return int(time.time())
+    return int(time.time()), None
+
+
+def fetch_server_ts(session):
+    """腾讯校时: GET checktime -> 取 t (秒)。失败退回本地。(兼容旧调用)"""
+    t_val, _ = fetch_server_time_ip(session)
+    return t_val
+
+
+# ---------------------------------------------------------------------------
+#  Host-Ip: 对腾讯校时返回的公网出口 IP 做 AES-128-ECB/Base64 加密
+#  与小程序 subPages/ticket/app-service.js placeOrder 逻辑一致:
+#      key = secretkey ? "mjnkHYmu0jpURBTQ" : "AyrKJRXPO3nR5Abc"
+#      Host-Ip = aesEncrypt(ip, key)
+# ---------------------------------------------------------------------------
+def build_host_ip(session, scan=False):
+    """
+    调 checktime 拿公网 IP, 按小程序方式加密, 返回 Host-Ip 请求头值。
+    拿不到 IP 时返回 "" (小程序在无 ip 时也不加密, Host-Ip 留空)。
+    scan=True 表示扫码渠道(有 secretkey), 使用 mjnkHYmu0jpURBTQ。
+    """
+    _, ip = fetch_server_time_ip(session)
+    if not ip:
+        log("checktime 未取到 ip, Host-Ip 置空")
+        return ""
+    key = cfg.HOST_IP_KEY_SCAN if scan else cfg.HOST_IP_KEY
+    host_ip = aes_ecb_b64(ip, key)
+    log("checktime ip=%s -> Host-Ip=%s" % (ip, host_ip))
+    return host_ip
+
 
 
 def build_nonce(session, hall_id, schedule_id, date_str):
@@ -340,12 +392,15 @@ def place_order(session, ctx, point_json_cipher, captcha_token, device_token):
         "deviceToken": device_token,
         "p": "wxmini",
     }
+    # 下单前实时调 checktime 取公网 IP 并按小程序方式加密, 写入 Host-Ip 请求头
+    host_ip = build_host_ip(session)
     log("提交 placeOrder ...")
     resp = session.post(
-        cfg.PLACEORDER_URL, headers=cfg.build_headers(),
+        cfg.PLACEORDER_URL, headers=cfg.build_headers(host_ip=host_ip),
         data=json.dumps(body, ensure_ascii=False).encode("utf-8"),
         timeout=10,
     )
+
     try:
         j = resp.json()
     except Exception:
