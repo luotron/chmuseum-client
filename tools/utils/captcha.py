@@ -13,8 +13,9 @@ import io
 import json
 import tkinter as tk
 
-import bm_config as cfg
-from bm_aes import aes_ecb_b64
+import config as cfg
+from utils.aes import aes_ecb_b64
+
 
 
 class CaptchaPicker:

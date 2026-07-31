@@ -41,13 +41,13 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import cycronet
 
-import bm_api as api
-from bm_captcha import CaptchaPicker, build_point_json
-from bm_api import log
+import api as api
+from utils.captcha import CaptchaPicker, build_point_json
+from api import log
 
 
 def main():
-    session = cycronet.CronetClient(chrometls="chrome_144")
+    session = cycronet.CronetClient(chrometls="chrome_133")
 
     # 0) 先校验登录态 —— checkToken 返回 userInfo 才继续
     log("Step 0: 校验 apiToken (checkToken) ...")

@@ -295,23 +295,6 @@ module.exports = {
 /* ===================== CLI / 自测 ===================== */
 if (require.main === module) {
   console.log('=== TDID /jprx/1941 content/token 解密工具 ===\n');
-
-  // 1) 自测: 加密-解密往返一致性
-  const key = 'MyTestKey123';
-  const plain = JSON.stringify({ hello: '世界', arr: [1, 2, 3], t: Date.now() });
-  const enc = sEncrypt(plain, key);
-  const dec = sDecrypt(enc, key);
-  console.log('[自测] 明文 == 解密结果 ?', dec === plain ? 'OK' : 'FAIL');
-  console.log('       密文(base64):', enc.slice(0, 48) + '...');
-  console.log();
-
-  // 2) UUID -> u 派生演示 (UUID 需替换为该设备真实值)
-  const demoUuid = '00000000-0000-0000-0000-000000000000';
-  console.log('[演示] deriveU("' + demoUuid + '") =');
-  console.log('       u =', deriveU(demoUuid));
-  console.log();
-
-  // 3) 用抓包数据尝试解密 (type=0 首包, 可离线反解 u)
   const CAPTURED = {
     content:
       'NGSYZkOFeTa+DqLW1F9DxxHfw1fqBkjT54pYztIANToQiPx0qQyM7eJyjdHmM4k06FYrO0RTsXNIS9e1n+BWa4Lt7gq4Qu8E3j0fj+WgEOw8h3sycMDN5z6mwUbwx+00i00+DC+IFdIWLa+c7POnpy1zIUYQ818vVaXzGt4w8fA9ybboLA6Sf5/91X3eqHuzMNU5WxTbhFO1dIiX1EegXUmxpGKh2A3ZDpRL6+EacyITEcL1RMxmHDXs2tIu492EL5zaACkUH8lYoLrj1ZROrTZugXga53zc8Il04MJ39xvfg9Ss+nUUPXdyKf4kRu22x6f8uLBrHF/+hX6hP7xB+yvaWcHtodC3uH4gp80Xe5GdLDeuOXgeVCCBnd2HUqTMrlM9dfcPtFr7XOTjGXg8VGfH1eV0esUbA8r/SZt2D0reJhEFUKd6VUVgzAYXETbaPIjOqMgBiEjDZgbX5vdd3DEJgBf6jwx1gaoHM9SdLLOwv/hfW1yUiGo7tj2B6aZgbzCv8HiJxZinsZUcXlRWd5Eftj8SvORFRCBKOgy9kJsbIbPu4/yjtiYvMw/cKdDIsxFi6eMAt3A5cRYDMc5HpN3CpIRVwMJtdbOHRG76Q3IvN+LfSMRRpS+RBojtcR6ojLLhq0jA+nNLdvel3dbABDUqVZ5AWY87oqdrINwQ3lxLUx6qe9B9+/wf8ZuktkW9nVBBh0n5QRRs2dRHsDKa7Est8eGzDhidX6P1ybPmWfiaGJkWsmVuzAbV9Qhxb4iN8jiaO7atACAx5sKHCGZqzPcLZu/J/1VwmiTId4Jq0AYx2cxkyilDqJk8804tclWyEL5gcc+MJ3oRfTHmU6MrFSDpCLt1ee/Jl7IgQcl0BvdRnOgWRJa4LnHHm0SoqvL7tcokuJo8w1rJEpBCiIvdw7vKtlggz67lMwSZMhsq2WDTMwOYhWzmdGaeXYIvrccODC/hhfPIXGZ2/yP5GeyfDVeCh7n/aqr39vcPKm6dJl2AiT+TEdEfIZI90JOZ5Kx8yOixXPrf44RdcgoHKuvKvQGc2jQvCHz4m4b7HfTcnvSU2FIQpA2UIhhfBjITr5gvblmt5sT6M/b8OXIaRoj1EgIANSxDNZ/LqRxM+NkPcLtW1F/aznHG+iIyEFuT7nSahvIdCAj6QoFMHEqGUoaHCRbRnT0TGsbVZwqKpezE9/I2OhmgI7K+LBo8picZXwemtTcVG1lkLaddjDuUmeFtA83/QeWXR2mqyHOGqRyZiax/Q0zNNjP5ufvrknPqWRmNtr3LKG6NKQvb1jq3ng4D+ojCTFaCEEhtYy3SReUeC1mFbthwjfrl3f11E6lCwzSAU7VAXMOsiDOrk5qz6djW8oOoX0EZ4kS3qJqPgBTnW3m1B9abwq+NRYsbFU5FzBma2soviZHixXY4WOmYb0nrcfDblap/3XYyV9sGz3MteZ/B8gn+r6PTYHDWWBc3Ik7gnGvzuMW9k2eWq5HR0wxcEDHF4vDCZpbl6eR4VCcv3VCADNqvF1NjPMkdy2NTMhK/ts5gdjy4McDuYZztYlDu7TrMcpBDS2g3kHKiRulBLxoGVnitHKHqWQ==',

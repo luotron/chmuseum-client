@@ -12,8 +12,8 @@ import subprocess
 import time
 from datetime import datetime
 
-import bm_config as cfg
-from bm_aes import aes_ecb_b64
+import config as cfg
+from utils.aes import aes_ecb_b64
 
 
 # ============================ 工具 ============================
@@ -199,6 +199,9 @@ def scan_for_ticket(session):
                             p_name = p.get("priceName", "未知类型")
                             if p_id is not None and p_pool > 0:
                                 # ★ 三者齐备, 立即锁定并停止扫描
+                                # ticketPool 取「场次余票」与「票价余票」的较小值,
+                                # 作为本次可下单的余票数量 (ticketNum)。
+                                avail = min(sch_pool, p_pool)
                                 ctx = {
                                     "hallId": hall_id,
                                     "scheduleId": schedule_id,
@@ -207,7 +210,9 @@ def scan_for_ticket(session):
                                     "hallName": hall_name,
                                     "schedName": sch_name,
                                     "priceName": p_name,
+                                    "ticketPool": avail,
                                 }
+
                                 log("=" * 60)
                                 log("🎉 发现余票并锁定! 停止扫描")
                                 log("   展厅: %s (hallId=%s)" % (hall_name, hall_id))
@@ -355,3 +360,7 @@ def place_order(session, ctx, point_json_cipher, captcha_token, device_token):
         return d
     log("placeOrder 返回: %s" % json.dumps(j, ensure_ascii=False)[:300])
     return None
+
+if __name__ == '__main__':
+    deviceToken = get_device_token()
+    print("deviceToken=%s" % deviceToken)
