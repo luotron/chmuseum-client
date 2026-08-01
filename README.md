@@ -34,7 +34,7 @@ pip install cycronet Pillow requests
 
 ```bash
 # 自动识别模式会自动启动服务
-python main.py --mode auto
+python main.py
 ```
 
 服务将在 `http://127.0.0.1:8000` 启动，提供验证码识别API。服务只会在第一次需要时启动，程序退出时会自动停止。
@@ -51,26 +51,8 @@ python app.py
 ### 3. 运行主程序
 
 ```bash
-# 使用自动识别模式（默认，会自动启动服务）
-python main.py --mode auto
-
-# 使用手动识别模式
-python main.py --mode manual
-
-# 自动失败时转手动模式
-python main.py --mode both
-
-# 指定自定义API地址
-python main.py --mode auto --api-url http://localhost:8000/CNM
-
-# 查看帮助
-python main.py --help
+python main.py
 ```
-
-### 命令行参数
-
-- `--mode`, `-m`: 验证码识别模式，可选值：`auto`（自动）、`manual`（手动）、`both`（自动失败时转手动），默认：`auto`
-- `--api-url`: 本地模型API地址，默认：`http://127.0.0.1:8000/CNM`
 
 ## 项目结构
 
