@@ -1,0 +1,19 @@
+# 国博余票监控项目依赖
+# 安装所有依赖: pip install -r requirements.txt
+
+# 主程序依赖
+cycronet>=0.1.0
+Pillow>=10.0.0
+requests>=2.31.0
+
+# 验证码API服务依赖 (可选，如果需要运行本地模型API)
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+numpy>=1.24.0
+onnxruntime>=1.15.0
+pydantic>=2.5.0
+
+# 开发依赖 (可选)
+# black>=23.0.0
+# flake8>=6.0.0
+# mypy>=1.7.0

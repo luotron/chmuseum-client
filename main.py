@@ -20,7 +20,8 @@ bmuseum.py — 国博余票监控 + 自动验证码点选下单 (主入口)
 
 import os
 import sys
-
+import random
+import time
 
 # ------------------ 屏蔽 Native 层的 GLib 警告 (仅 posix) ------------------
 def _suppress_native_stderr():
@@ -40,15 +41,18 @@ _suppress_native_stderr()
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import cycronet
+import argparse
 
 import api as api
 from utils.captcha import CaptchaPicker, build_point_json
+from utils.captcha_auto import auto_recognize_captcha
 from api import log
 
 
 def main():
     session = cycronet.CronetClient(chrometls="chrome_133")
-
+    from utils.captcha_auto import CaptchaAutoRecognizer
+    recognizer = CaptchaAutoRecognizer()
     # 0) 先校验登录态 —— checkToken 返回 userInfo 才继续
     log("Step 0: 校验 apiToken (checkToken) ...")
     user_info = api.check_token(session)
@@ -59,6 +63,7 @@ def main():
     if not device_token:
         log("⚠ 未获得 deviceToken, 仍尝试下单 (可能被风控拒绝)。")
         device_token = ""
+        return
     log("✅ 登录有效, 继续执行。")
 
     # 1) 扫描 + 锁定 (三者齐备立即停止扫描)
@@ -75,12 +80,45 @@ def main():
         log("getBlock 失败: %s" % e)
         return
 
-    # 3) 可视化点选
-    log("Step 3: 弹出验证码窗口, 请点选目标图案后点『确认提交』...")
-    picker = CaptchaPicker(block)
-    points = picker.run()
+    # 3) 验证码识别
+    points = None
+    log("Step 3: 尝试自动识别验证码...")
+    # 检查API是否可用
+    if recognizer.check_api_available():
+        log("本地模型API可用，开始识别...")
+        original_image_base64 = block.get("originalImageBase64")
+        jigsaw_image_base64 = block.get("jigsawImageBase64")
+        secret_key = block.get("secretKey")
+        
+        if original_image_base64 and jigsaw_image_base64:
+            result = recognizer.recognize_center_point(
+                original_image_base64=original_image_base64,
+                jigsaw_image_base64=jigsaw_image_base64,
+                secret_key=secret_key
+            )
+            
+            if result:
+                x, y = result
+                log(f"识别成功: 中心点坐标 ({x}, {y})")
+                points = [(x, y)]
+            else:
+                log("自动识别失败")
+        else:
+            log("缺少验证码图像数据，无法自动识别")
+    else:
+        log("本地模型API不可用")
+    
+    # 如果自动识别失败或模式为manual，使用手动识别
     if not points:
-        log("已取消点选, 退出。")
+        log("Step 3: 弹出验证码窗口，请点选目标图案后点『确认提交』...")
+        picker = CaptchaPicker(block)
+        points = picker.run()
+        if not points:
+            log("已取消点选, 退出。")
+            return
+    
+    if not points:
+        log("❌ 验证码识别失败，退出。")
         return
 
     # 4) pointJson 加密
@@ -95,6 +133,7 @@ def main():
         log("⚠ 未获得 deviceToken, 仍尝试下单 (可能被风控拒绝)。")
         device_token = ""
 
+    time.sleep(random.uniform(0.5, 1.0))
     # 6) placeOrder
     log("Step 5: 提交下单 (placeOrder) ...")
     api.place_order(session, ctx, point_json_cipher, captcha_token, device_token)
