@@ -195,6 +195,15 @@ def fetch_price_details(session, hall_id, schedule_id, query_date):
         log("查询价格接口异常: %s" % e)
     return []
 
+def is_in_time_range():
+    now = datetime.now()
+    current_time = now.time()
+    
+    # 设置起始和结束时间
+    start_time = datetime.strptime("17:00:00", "%H:%M:%S").time()
+    end_time = datetime.strptime("17:08:00", "%H:%M:%S").time()
+    
+    return start_time <= current_time <= end_time
 
 def scan_for_ticket(session):
     """
@@ -240,6 +249,9 @@ def scan_for_ticket(session):
                     hall_name = hall.get("name", "未知展厅")
 
                     schedules = hall.get("scheduleTicketPoolVOS") or []
+
+                    if is_in_time_range() and hall_id != 1:
+                        continue
 
                     for sch in schedules:
                         schedule_id = sch.get("hallScheduleId")
@@ -288,7 +300,7 @@ def scan_for_ticket(session):
             else:
                 print("[%s] 扫描正常: hallTicketPoolVOS 均为 null" % now_str, end="\r")
 
-            time.sleep(random.uniform(2.0, 3.0))
+            time.sleep(random.uniform(1.0, 2.0))
 
         except Exception as e:
             log("扫描异常 (%s), 重建 Session 并等待" % e)
