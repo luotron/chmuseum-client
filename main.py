@@ -22,6 +22,7 @@ import os
 import sys
 import random
 import time
+import json
 
 # ------------------ 屏蔽 Native 层的 GLib 警告 (仅 posix) ------------------
 def _suppress_native_stderr():
@@ -48,6 +49,35 @@ from utils.captcha import CaptchaPicker, build_point_json
 from utils.captcha_auto import auto_recognize_captcha
 from api import log
 
+def manualOrder(session, ctx):
+    try:
+        block = api.get_block(session, ctx)
+    except Exception as e:
+        log("getBlock 失败: %s" % e)
+        return
+    picker = CaptchaPicker(block)
+    points = picker.run()
+    if not points:
+        log("已取消点选, 退出。")
+        return
+    point_json_cipher = build_point_json(points, block.get("secretKey"))
+    log("pointJson(加密)=%s..." % point_json_cipher[:40])
+    captcha_token = block.get("token")
+
+    device_token = api.get_device_token()
+    if not device_token:
+        log("⚠ 未获得 deviceToken, 仍尝试下单 (可能被风控拒绝)。")
+        return
+
+    resp = api.place_order(session, ctx, point_json_cipher, captcha_token, device_token)
+    if resp.get("code") == 200 and resp.get("data"):
+        d = resp["data"]
+        log("=" * 60)
+        log("🎉 下单成功! 订单号=%s 场次=%s"
+            % (d.get("orderNumber"), d.get("schduleDate")))
+        log("=" * 60)
+    else:
+        log("placeOrder 返回: %s" % json.dumps(resp, ensure_ascii=False)[:300])
 
 def main():
     session = cycronet.CronetClient(chrometls="chrome_133")
@@ -136,8 +166,18 @@ def main():
     time.sleep(random.uniform(0.5, 1.0))
     # 6) placeOrder
     log("Step 5: 提交下单 (placeOrder) ...")
-    api.place_order(session, ctx, point_json_cipher, captcha_token, device_token)
-
+    resp = api.place_order(session, ctx, point_json_cipher, captcha_token, device_token)
+    if resp.get("code") == 200 and resp.get("data"):
+        d = resp["data"]
+        log("=" * 60)
+        log("🎉 下单成功! 订单号=%s 场次=%s"
+            % (d.get("orderNumber"), d.get("schduleDate")))
+        log("=" * 60)
+    elif resp.get("code") == 502:
+        log(resp.get("msg"))
+        manualOrder(session, ctx)
+    else:
+        log("placeOrder 返回: %s" % json.dumps(resp, ensure_ascii=False)[:300])
 
 if __name__ == "__main__":
     try:

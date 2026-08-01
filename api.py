@@ -210,9 +210,9 @@ def scan_for_ticket(session):
     轮询扫描余票。一旦发现某场次 ticketPool>0 且存在 priceId(余票>0),
     立即返回锁定的上下文 dict:
         { hallId, scheduleId, priceId, date, hallName, schedName, priceName }
-    否则持续轮询 (随机 2~3 秒间隔)。
+    否则持续轮询 (随机 1~2 秒间隔)。
     """
-    log("开始监听余票 (随机 2~3 秒间隔)... 按 Ctrl+C 退出")
+    log("开始监听余票 (随机 1~2 秒间隔)... 按 Ctrl+C 退出")
     while True:
         now_str = datetime.now().strftime("%H:%M:%S")
         try:
@@ -473,15 +473,7 @@ def place_order(session, ctx, point_json_cipher, captcha_token, device_token):
     except Exception:
         log("placeOrder 响应非 JSON: %s" % resp.text[:200])
         return None
-    if j.get("code") == 200 and j.get("data"):
-        d = j["data"]
-        log("=" * 60)
-        log("🎉 下单成功! 订单号=%s 场次=%s"
-            % (d.get("orderNumber"), d.get("schduleDate")))
-        log("=" * 60)
-        return d
-    log("placeOrder 返回: %s" % json.dumps(j, ensure_ascii=False)[:300])
-    return None
+    return j
 
 if __name__ == '__main__':
     deviceToken = get_device_token()
