@@ -1,7 +1,0 @@
-{
-  "component": true,
-  "usingComponents": {
-    "van-popup": "../../../../miniprogram_npm/@vant/weapp/popup/index",
-    "rich-text": "/components/htmlParser/index"
-  }
-}
