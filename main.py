@@ -89,7 +89,7 @@ def main():
     if not user_info:
         log("❌ apiToken 无效或校验失败, 请更新 config.API_TOKEN 后重试。退出。")
         return
-    device_token = api.get_device_token()
+    device_token = api.get_device_token(session)
     if not device_token:
         log("⚠ 未获得 deviceToken, 仍尝试下单 (可能被风控拒绝)。")
         device_token = ""
@@ -158,7 +158,7 @@ def main():
 
     # 5) deviceToken
     log("Step 4: 获取 deviceToken ...")
-    device_token = api.get_device_token()
+    device_token = api.get_device_token(session)
     if not device_token:
         log("⚠ 未获得 deviceToken, 仍尝试下单 (可能被风控拒绝)。")
         device_token = ""

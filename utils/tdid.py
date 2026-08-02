@@ -1,8 +1,6 @@
 """
 tdid.py — 腾讯 TDID / 无痕验证 SDK 纯 Python 实现
 ================================================================================
-把 tdid_xxtea.js + tdid_client.js 的核心算法翻译为纯 Python,
-无需本地 node 环境即可获取 deviceToken (placeOrder 用)。
 
 算法链、content/token 生成流程, 以及"如何手动抓取密钥并解密 content/token"
 的完整文档见同目录下的 tdid.md。
@@ -24,6 +22,14 @@ import sys
 import time
 import uuid as _uuid
 import http.client
+import cycronet
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import config as cfg
+import main
+
+
+
 
 
 # ============================================================================
@@ -389,11 +395,10 @@ p2baeeec4 = s_encrypt
 
 
 # ============================================================================
-#  TDID 客户端 (两阶段) — 与 tdid_client.js 对齐
+#  TDID 客户端 (两阶段)
 # ============================================================================
 _CHANNEL = "109045"
-_API_HOST = "browsertdidticket.m.qq.com"
-_API_PATH = "/jprx/1941"
+_API_PATH = "https://browsertdidticket.m.qq.com/jprx/1941"
 
 # 状态文件统一落盘到 cache/tdid_state.json (与 login_info.json 同目录)
 _CACHE_DIR = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "cache"))
@@ -402,11 +407,6 @@ _STATE_FILE = os.path.join(_CACHE_DIR, "tdid_state.json")
 _LEGACY_STATE_FILE = os.path.abspath(
     os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "tdid_state.json")
 )
-
-_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
-       "Chrome/132.0.0.0 Safari/537.36 MicroMessenger/7.0.20.1781(0x6700143B) NetType/WIFI "
-       "MiniProgramEnv/Windows WindowsWechat/WMPF WindowsWechat(0x63090a13) "
-       "UnifiedPCWindowsWechat(0xf2541721) XWEB/19027")
 
 # 设备指纹字段 (与 JS DEV 表一致)
 _DEV = {
@@ -570,44 +570,48 @@ def _build_host_sign():
     return json.dumps({"noncestr": noncestr, "timestamp": timestamp, "signature": signature})
 
 
-def _post_jprx(body, host_sign):
+def _post_jprx(session: cycronet.CronetClient, body, host_sign):
     payload = json.dumps(body, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
     headers = {
-        "Content-Type": "application/json",
+        "Host": "browsertdidticket.m.qq.com",
+        "Connection": "keep-alive",
         "X-WECHAT-HOSTSIGN": host_sign or _build_host_sign(),
+        "User-Agent": cfg.UA,
         "xweb_xhr": "1",
+        "Content-Type": "application/json",
         "Accept": "*/*",
-        "User-Agent": _UA,
+        "Sec-Fetch-Site": "cross-site",
+        "Sec-Fetch-Mode": "cors",
+        "Sec-Fetch-Dest": "empty",
         "Referer": "https://servicewechat.com/wx9e2927dd595b0473/100/page-frame.html",
-        "Accept-Language": "zh-CN,zh;q=0.9",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Accept-Language": "zh-CN,zh;q=0.9"
     }
-    conn = http.client.HTTPSConnection(_API_HOST, timeout=30)
+    
+    resp = session.post(_API_PATH, headers=headers,
+                            data=payload, timeout=8)
     try:
-        conn.request("POST", _API_PATH, body=payload, headers=headers)
-        resp = conn.getresponse()
-        raw = resp.read().decode("utf-8", "replace")
-        status = resp.status
-    finally:
-        conn.close()
-    try:
-        j = json.loads(raw)
+        j = resp.json()
     except Exception:
+        main.log("❌ _post_jprx 响应解析失败: %s" % resp.text)
         j = None
-    return {"status": status, "json": j, "raw": raw}
+    return j
 
 
 def _extract_resp(res):
     try:
-        return res["json"]["data"]["resp"]
+        return res["data"]["resp"]
     except Exception:
         return None
 
 
-def get_device_token():
+def get_device_token(session: cycronet.CronetClient = None) -> dict:
     """
     纯 Python 两阶段获取 deviceToken (placeOrder 的 deviceToken)。
     返回 dict: {ok, deviceToken, ret, ...} 与 JS 版一致。
     """
+    if session is None:
+        session = cycronet.CronetClient(chrometls="chrome_133")
     state = _load_state()
     if not state["uuid"]:
         state["uuid"] = _generate_uuid()
@@ -619,7 +623,7 @@ def get_device_token():
     if not state["riskToken"]:
         r1 = _build_request_body(uuid_str, "", state["ticketID"])
         try:
-            res1 = _post_jprx(r1, host_sign)
+            res1 = _post_jprx(session, r1, host_sign)
         except Exception as e:
             return {"ok": False, "error": "stage1 network: %s" % e}
         resp1 = _extract_resp(res1)
@@ -633,11 +637,13 @@ def get_device_token():
         if not state["riskToken"]:
             return {"ok": False, "ret": resp1.get("ret"),
                     "error": "stage1 rejected (no riskToken)"}
+        return {"ok": True, "deviceToken": resp1["msgBlock"], "ret": 0,
+                "overtime": resp1.get("overtime")}
 
     # 阶段二: type=1 换取最终 msgBlock
     r2 = _build_request_body(uuid_str, state["riskToken"], state["ticketID"])
     try:
-        res2 = _post_jprx(r2, host_sign)
+        res2 = _post_jprx(session, r2, host_sign)
     except Exception as e:
         return {"ok": False, "error": "stage2 network: %s" % e}
     resp2 = _extract_resp(res2)
@@ -667,58 +673,20 @@ def get_device_token():
 # 阶段一 (type=0): 从 token 反解出 content_key/uuid, 再解 content
 SESSION_STAGE1 = {
     "type": "0",
-    "timestamp": "1785474711109",
-    "token": "tsSnodWMjtl2j78PwxDd1Wnw4VD7SQCw+O5FPzwrdBJu2QL6BoEnenIeuYvri5J6iC404A==",
+    "timestamp": "1785660553620",
+    "token": "GxkmLJ9ruJolnKoQk0t1sjPjn2GRqzNycX+itil68tui6Y2P3gdnvhjWw0mtR9JXtLnnCw==",
     "content": (
-        "NGSYZkOFeTa+DqLW1F9DxxHfw1fqBkjT54pYztIANToQiPx0qQyM7eJyjdHmM4k06FYrO0RTsX"
-        "NIS9e1n+BWa4Lt7gq4Qu8E3j0fj+WgEOw8h3sycMDN5z6mwUbwx+00i00+DC+IFdIWLa+c7POn"
-        "py1zIUYQ818vVaXzGt4w8fA9ybboLA6Sf5/91X3eqHuzMNU5WxTbhFO1dIiX1EegXUmxpGKh2A"
-        "3ZDpRL6+EacyITEcL1RMxmHDXs2tIu492EL5zaACkUH8lYoLrj1ZROrTZugXga53zc8Il04MJ3"
-        "9xvfg9Ss+nUUPXdyKf4kRu22x6f8uLBrHF/+hX6hP7xB+yvaWcHtodC3uH4gp80Xe5GdLDeuOX"
-        "geVCCBnd2HUqTMrlM9dfcPtFr7XOTjGXg8VGfH1eV0esUbA8r/SZt2D0reJhEFUKd6VUVgzAYX"
-        "ETbaPIjOqMgBiEjDZgbX5vdd3DEJgBf6jwx1gaoHM9SdLLOwv/hfW1yUiGo7tj2B6aZgbzCv8H"
-        "iJxZinsZUcXlRWd5Eftj8SvORFRCBKOgy9kJsbIbPu4/yjtiYvMw/cKdDIsxFi6eMAt3A5cRYD"
-        "Mc5HpN3CpIRVwMJtdbOHRG76Q3IvN+LfSMRRpS+RBojtcR6ojLLhq0jA+nNLdvel3dbABDUqVZ"
-        "5AWY87oqdrINwQ3lxLUx6qe9B9+/wf8ZuktkW9nVBBh0n5QRRs2dRHsDKa7Est8eGzDhidX6P1"
-        "ybPmWfiaGJkWsmVuzAbV9Qhxb4iN8jiaO7atACAx5sKHCGZqzPcLZu/J/1VwmiTId4Jq0AYx2c"
-        "xkyilDqJk8804tclWyEL5gcc+MJ3oRfTHmU6MrFSDpCLt1ee/Jl7IgQcl0BvdRnOgWRJa4LnHH"
-        "m0SoqvL7tcokuJo8w1rJEpBCiIvdw7vKtlggz67lMwSZMhsq2WDTMwOYhWzmdGaeXYIvrccODC"
-        "/hhfPIXGZ2/yP5GeyfDVeCh7n/aqr39vcPKm6dJl2AiT+TEdEfIZI90JOZ5Kx8yOixXPrf44Rd"
-        "cgoHKuvKvQGc2jQvCHz4m4b7HfTcnvSU2FIQpA2UIhhfBjITr5gvblmt5sT6M/b8OXIaRoj1Eg"
-        "IANSxDNZ/LqRxM+NkPcLtW1F/aznHG+iIyEFuT7nSahvIdCAj6QoFMHEqGUoaHCRbRnT0TGsbV"
-        "ZwqKpezE9/I2OhmgI7K+LBo8picZXwemtTcVG1lkLaddjDuUmeFtA83/QeWXR2mqyHOGqRyZia"
-        "x/Q0zNNjP5ufvrknPqWRmNtr3LKG6NKQvb1jq3ng4D+ojCTFaCEEhtYy3SReUeC1mFbthwjfrl"
-        "3f11E6lCwzSAU7VAXMOsiDOrk5qz6djW8oOoX0EZ4kS3qJqPgBTnW3m1B9abwq+NRYsbFU5FzB"
-        "ma2soviZHixXY4WOmYb0nrcfDblap/3XYyV9sGz3MteZ/B8gn+r6PTYHDWWBc3Ik7gnGvzuMW9"
-        "k2eWq5HR0wxcEDHF4vDCZpbl6eR4VCcv3VCADNqvF1NjPMkdy2NTMhK/ts5gdjy4McDuYZztYl"
-        "Du7TrMcpBDS2g3kHKiRulBLxoGVnitHKHqWQ=="
+        "JeruHrYY5yo02T3hu5PaScOmoJt5AwOtcFl4ch9w5UBX7AeQhBHMMaE9z+la34Bh0n7NI7Hch/xM9TTWuG7jxXKg7cNEey1E5DTnFNfl0HAiDhCSY/akU2nc8XsC4GFI1XoE9hHS+2ipYWaTcB3Gf4Bed1a/JU5avMgVk4QfREBfa9N51XHpH2RkkREV0ZUZAQ1oIn1Q4CBqP+K8mLIlCo60HUyccwqnzadbfqk0VA/Qol8X2d/ZwAKqKTvk3c8QMdpH20r+0Hc2/t8DlbmRyskufJVo6PesaftIxPOVR1vcgq8NGsKPezXDe73QXCEQyZdx7si5PeuW9EBSej7PX4G/yfaYkFt6uznCx9y/lVQsQqnPcc+hCMCtZiBC2j3yBLoku4kC1e2GjRH4eCg3Hp2UW50NZEfHQsspRcU7gNuoIIvHKcLS0aj2a6RC5QWj3PlDzfgUSsJyWHlyMq/fw0+aK9IzTPct82kDYzc9Nd3jJjx1od6tahcuyzAaWrDKH/PHLVWeu262Hl5fkTjpLUIFGSyzSjZbWIk3R8t3jlfrJ0izoaC3AduAmGjxsKKZeUqtGusv2LIKth3Es0/nudiWNlfibRFh8ZjV7s/nHaxyHYtNCHwIOKMwL86tRwoetCZ/rUHUu6g6Kgbb06vAulsDT4puxk/C6gWx5sdKf7ijxsi6o7GLwVabONx/feN3ldOAjc4r+Pw0Iw5iyXgzqf5T/7DOdlU/vFAshsQUX3bIVTDrL/NiwzaMSXzXorFqZTH6dIKSik4lZP6GKy/3bQL5EVykwVhm7+AVx+Fd/GG+5Ib0gaGH1TRzifkbLAPML/9vYiuSIEpTy6XOOuvvja0zd2A0J2tK+za/fxZBwDIFjbVoSREKGbcPaFqOttT4tAVfjjO3cuShl5JhbNHhrnnLKn3EJyQPJXDMhuKGh9bmAGzQO4IAeyhu0LkgGST7bzYyNfZmkWfDDhNKaQfR+1O0UEwAGaVXWgljtu/ODWg96FDj0LxJnVXoyH3wsNJO+2jTd2zrnIRsPkr58n1V0s0xzdSzq9BtND830x4q+NjpIh8FNE+lQngFfflDXiAumc9FzMB+Vd7lQ+nEU6NFub5TRN4okW0qVKwbOZmhFT6em0fKXDEHrAm49JSdy3LHBotc4sGm/SifpRFYSpIqMQWSb/q7N9InfFJfDMtC6sGSZAVkzNSascZcALghcwqypWsKW6T2qSnI9atacGuvjAen/IcCT98NefN2JAcN6pZkWxxsY0hn1VZJxm9cslELwH1lMcQb0Qtkdx+CKdzjNEecxxvbFY5ZAYySvkOCeboRy9BHa3HiCj1uutv05da7zf235jCapELXPPQsU2RbWuwVIQQR7ovsmKanzPz8TCSc8hBoK34AtwMqGcG7+E2g0icgKHgByo7rUBwEHxp0TFaZSnek/Q1OOSDsHkKiB3/JaXab8U1chQrIcy8BEqzC6o+LEYV0RLRS7+aK0h07lV4Bft2xO9dslLpfKxrn4ReZhtyuliL279Qu1XGeRAcZg2OQhQkY6HRA0HkUHkcftRAoBgR+6PelHuCgby313gdYmBDOLD0Ywg=="
     ),
 }
 
 # 阶段二 (type=1): token 无法离线解, 但 content 可用同设备 content_key 解密
 SESSION_STAGE2 = {
     "type": "1",
-    "timestamp": "1785474729883",
-    "token": "hnV5ey3Dl0D1JlJYZ/P2hpekpoNxvk4cGr6GqMz3dpRrPMOC+JgJGqgkGJWXxlOHm41D6w==",
+    "timestamp": "1785660826320",
+    "token": "AtseBjiFpcIIqOJG8jwp1PF2+4BQnq+8cgSrXNgXy6YJV+vNbL6dKEHevVm8DhT8Z/YvyQ==",
     "content": (
-        "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"
+        "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"
     ),
 }
 

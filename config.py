@@ -18,6 +18,11 @@ GETBLOCK_URL = "https://wxmini.chnmuseum.cn/prod-api/pool/getBlock"
 PLACEORDER_URL = "https://wxmini.chnmuseum.cn/prod-api/config/orderRule/placeOrder"
 CHECKTIME_URL = "https://vv.video.qq.com/checktime?otype=json"
 
+# ============================ User-Agent ============================
+UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
+       "Chrome/132.0.0.0 Safari/537.36 MicroMessenger/7.0.20.1781(0x6700143B) NetType/WIFI "
+       "MiniProgramEnv/Windows WindowsWechat/WMPF WindowsWechat(0x63090a13) "
+       "UnifiedPCWindowsWechat(0xf2541721) XWEB/19027")
 # ============================ 常量 ============================
 NONCE_KEY = "AyrKJRXPO3nR5Abc"   # getBlock nonce 的 AES key (源码固定)
 # Host-Ip 加密 key: 非扫码(secretkey 为空)用 AyrKJRXPO3nR5Abc, 扫码用 mjnkHYmu0jpURBTQ
@@ -53,7 +58,7 @@ def build_headers(host_ip=None):
              下单前应由 api.build_host_ip() 计算后传入。
     """
     return {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36 MicroMessenger/7.0.20.1781(0x6700143B) NetType/WIFI MiniProgramEnv/Windows WindowsWechat/WMPF WindowsWechat(0x63090a13) UnifiedPCWindowsWechat(0xf2541721) XWEB/19027",
+        "User-Agent": UA,
         "Connection": "keep-alive",
         "Accept": "application/json",
         "content-type": "application/json",

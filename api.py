@@ -11,7 +11,7 @@ import os
 import random
 import time
 from datetime import datetime
-
+import cycronet
 import config as cfg
 from utils.aes import aes_ecb_b64
 from utils import tdid as tdid_client
@@ -402,7 +402,7 @@ def get_block(session, ctx):
 # ============================================================================
 #  4. deviceToken (纯 Python TDID 两阶段, 无需本地 node 环境)
 # ============================================================================
-def get_device_token():
+def get_device_token(session: cycronet.CronetClient):
     """
     纯 Python 复刻腾讯 TDID 两阶段流程 (utils/tdid.py) 获取 deviceToken,
     返回 msgBlock 字符串 (placeOrder 的 deviceToken)。失败返回 None。
@@ -410,7 +410,7 @@ def get_device_token():
     """
     log("请求 deviceToken (Python TDID 两阶段)...")
     try:
-        r = tdid_client.get_device_token()
+        r = tdid_client.get_device_token(session)
     except Exception as e:
         log("deviceToken 调用异常: %s" % e)
         return None
