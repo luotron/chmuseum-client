@@ -172,9 +172,62 @@ def build_nonce(session, hall_id, schedule_id, date_str):
 
 
 # ============================================================================
+#  1.5 risk/frontPage — 风控前置校验 (每次扫描 ALL_CONFIG 前调用)
+# ============================================================================
+def front_page(session, device_token=None):
+    """
+    调 /prod-api/risk/frontPage 做风控前置校验。
+    请求体 code 为 get_device_token() 返回的 deviceToken (msgBlock)。
+    device_token 为空时自动调 get_device_token() 获取。
+    返回响应 data dict (含 strategy/uuId/prompt), 失败返回 None。
+    """
+    now_str = datetime.now().strftime("%H:%M:%S")
+    if not device_token:
+        device_token = get_device_token(session)
+    if not device_token:
+        log("frontPage 跳过: 未取到 deviceToken")
+        return None
+
+    body = {
+        "code": device_token,
+        "unionId": cfg.UNIONID,
+        "miniOpenId": cfg.OPENID,
+        "p": "wxmini",
+    }
+    try:
+        resp = session.post(
+            cfg.FRONTPAGE_URL, headers=cfg.build_headers(),
+            data=json.dumps(body, ensure_ascii=False).encode("utf-8"),
+            timeout=8,
+        )
+    except Exception as e:
+        log("frontPage 请求异常: %s" % e)
+        return None
+
+    if resp.status_code != 200:
+        log("frontPage HTTP %s" % resp.status_code)
+        return None
+    try:
+        j = resp.json()
+    except Exception:
+        log("frontPage 响应非 JSON: %s" % resp.text[:200])
+        return None
+
+    if j.get("code") != 200:
+        log("frontPage 失败: %s" % json.dumps(j, ensure_ascii=False)[:200])
+        return None
+
+    data = j.get("data", {}) or {}
+    # print("[%s] frontPage 成功: strategy=%s uuId=%s prompt=%s"
+    #     % (now_str, data.get("strategy"), data.get("uuId"), data.get("prompt")), end="\r")
+    return data
+
+
+# ============================================================================
 #  2. 余票扫描 + 锁定 hallId / scheduleId / priceId
 # ============================================================================
 def fetch_price_details(session, hall_id, schedule_id, query_date):
+
     """查询指定场次的详细票价, 返回 price 列表 (含 priceId / ticketPool)"""
     params = {
         "hallId": hall_id,
@@ -216,7 +269,11 @@ def scan_for_ticket(session):
     while True:
         now_str = datetime.now().strftime("%H:%M:%S")
         try:
+            # 每次拉取 ALL_CONFIG 前先做风控前置校验 (code = deviceToken)
+            front_page(session)
+            time.sleep(random.uniform(0.5, 1.0))
             resp = session.get(cfg.ALL_CONFIG_URL, headers=cfg.build_headers(), timeout=5)
+
             if resp.status_code != 200:
                 log("HTTP %s, 稍后重试" % resp.status_code)
                 time.sleep(random.uniform(2.0, 5.0))
@@ -408,14 +465,12 @@ def get_device_token(session: cycronet.CronetClient):
     返回 msgBlock 字符串 (placeOrder 的 deviceToken)。失败返回 None。
     不再依赖本地 node 环境。
     """
-    log("请求 deviceToken (Python TDID 两阶段)...")
     try:
         r = tdid_client.get_device_token(session)
     except Exception as e:
         log("deviceToken 调用异常: %s" % e)
         return None
     if r.get("ok") and r.get("deviceToken"):
-        log("deviceToken=%s..." % r["deviceToken"][:32])
         return r["deviceToken"]
     log("deviceToken 获取失败: ret=%s error=%s" % (r.get("ret"), r.get("error")))
     return None

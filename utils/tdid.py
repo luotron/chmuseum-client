@@ -26,10 +26,22 @@ import cycronet
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import config as cfg
-import main
+
+
+def _log(msg):
+    """惰性获取 main.log, 避免顶层 import main 造成循环导入; 取不到则退回 print。"""
+    try:
+        import main as _main
+        if hasattr(_main, "log"):
+            _main.log(msg)
+            return
+    except Exception:
+        pass
+    print(msg)
 
 
 
+host_sign = ""
 
 
 # ============================================================================
@@ -399,6 +411,7 @@ p2baeeec4 = s_encrypt
 # ============================================================================
 _CHANNEL = "109045"
 _API_PATH = "https://browsertdidticket.m.qq.com/jprx/1941"
+_EVENT_REPORT_PATH = "https://gatherer.m.qq.com/event/report"
 
 # 状态文件统一落盘到 cache/tdid_state.json (与 login_info.json 同目录)
 _CACHE_DIR = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "cache"))
@@ -411,7 +424,7 @@ _LEGACY_STATE_FILE = os.path.abspath(
 # 设备指纹字段 (与 JS DEV 表一致)
 _DEV = {
     "4": "windows", "43": "wifi",
-    "101": "osPfN4seDJhyEgrFmC_DME8Bq3bc",
+    "101": cfg.OPENID,
     "103": "3.17.0",
     "104": "microsoft", "105": "microsoft",
     "106": "780*414", "107": "Windows Unknown x64", "108": "zh_CN",
@@ -420,7 +433,7 @@ _DEV = {
     "116": "20", "117": "-1", "118": "1:1:1:1:1:0:1:1",
     "119": "", "121": "", "122": "", "123": "", "124": "false",
     "126": "15", "127": "20260715", "128": "198.18.0.1", "129": "release",
-    "130": "4ecfb0c75f2767522744b9ddd683989f765a189ee9391b8338ba0f3dcec7b89e",
+    "130": "9a197ec12f15436ff70609d5ac73282165ae37649f5049db61392350706393d8",
 }
 _FT_OFFSCREEN_CANVAS = ""
 
@@ -559,7 +572,7 @@ def _build_request_body(uuid_str, current_risk_token, ticket_id):
             "version": "1", "type": str(typ), "timestamp": str(c),
         }
     }
-    return body
+    return body, biz_obj
 
 
 def _build_host_sign():
@@ -570,7 +583,77 @@ def _build_host_sign():
     return json.dumps({"noncestr": noncestr, "timestamp": timestamp, "signature": signature})
 
 
-def _post_jprx(session: cycronet.CronetClient, body, host_sign):
+def event_report(session: cycronet.CronetClient, biz_obj: dict, uuid_str: str, host_sign_str: str = None):
+    """
+    发送埋点日志 (POST https://gatherer.m.qq.com/event/report)
+    """
+    deviceObj = biz_obj.get("deviceObj", {})
+    # EId_TId_GRft_End 的 content 时间戳 t 来自 device_obj["1"] 生成时的 inner_ts + 4
+    device1 = deviceObj.get("1", "")
+    dev_str = s_decrypt(device1, PB89649DE) if device1 else ""
+    device1_ts = int(dev_str.split("_")[1] if device1 else int(time.time() * 1000))
+    seq = biz_obj.get("statisticsInfo", {}).get("11", _generate_req_id())
+
+    # 按抓包中的相对时间差设置各埋点事件的时间与耗时
+    t_gt_start = device1_ts
+    t_grft_start = device1_ts + 1
+    t_grft_end = device1_ts + 5
+    t_grisk_start = device1_ts + 6
+    t_grisk_end = device1_ts + 35
+    t_gt_end = device1_ts + 35
+
+    msg_grft_end = (
+        '{"ftCode":7,"dur":1},{"ftCode":4,"dur":0},'
+        '{"tag":8,"err":{"ret":-1000319,"res":"","err":"n.obtainConnectedWifi is not a function","ftCode":0,"dur":0}},'
+        '{"ftCode":12,"dur":0},{"ftCode":13,"dur":0},{"ftCode":10,"dur":3}'
+    )
+
+    events = [
+        {"id": "EId_TId_GT_Start", "content": json.dumps({"t": t_gt_start, "ret": 0, "msg": ""}, separators=(",", ":"))},
+        {"id": "EId_TId_GRft_Start", "content": json.dumps({"t": t_grft_start, "ret": 0, "msg": "", "dur": 1}, separators=(",", ":"))},
+        {"id": "EId_TId_GRft_End", "content": json.dumps({"t": t_grft_end, "ret": 0, "msg": msg_grft_end, "dur": 5}, separators=(",", ":"))},
+        {"id": "EId_TId_GRisk_Start", "content": json.dumps({"t": t_grisk_start, "ret": 0, "msg": "", "dur": 6}, separators=(",", ":"))},
+        {"id": "EId_TId_GRisk_End", "content": json.dumps({"t": t_grisk_end, "ret": 0, "msg": "", "dur": 35}, separators=(",", ":"))},
+        {"id": "EId_TId_GT_End", "content": json.dumps({"t": t_gt_end, "ret": 0, "msg": "", "dur": 35}, separators=(",", ":"))}
+    ]
+
+    payload_obj = {
+        "channel": _CHANNEL,
+        "platform": 5,
+        "events": events,
+        "buildno": 200200,
+        "uuid": uuid_str,
+        "seq": seq
+    }
+
+    payload = json.dumps(payload_obj, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+
+    headers = {
+        "Host": "gatherer.m.qq.com",
+        "Connection": "keep-alive",
+        "X-WECHAT-HOSTSIGN": host_sign_str or _build_host_sign(),
+        "User-Agent": cfg.UA,
+        "xweb_xhr": "1",
+        "Content-Type": "application/json",
+        "Accept": "*/*",
+        "Sec-Fetch-Site": "cross-site",
+        "Sec-Fetch-Mode": "cors",
+        "Sec-Fetch-Dest": "empty",
+        "Referer": "https://servicewechat.com/wx9e2927dd595b0473/100/page-frame.html",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Accept-Language": "zh-CN,zh;q=0.9"
+    }
+
+    try:
+        resp = session.post(_EVENT_REPORT_PATH, headers=headers, data=payload, timeout=8)
+        return resp.json()
+    except Exception as e:
+        _log("❌ event_report 请求失败: %s" % e)
+        return None
+
+
+
+def _post_jprx(session: cycronet.CronetClient, body, biz_obj, uuid_str, host_sign):
     payload = json.dumps(body, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
     headers = {
         "Host": "browsertdidticket.m.qq.com",
@@ -589,12 +672,15 @@ def _post_jprx(session: cycronet.CronetClient, body, host_sign):
     }
     
     resp = session.post(_API_PATH, headers=headers,
-                            data=payload, timeout=8)
+                        data=payload, timeout=8)
     try:
         j = resp.json()
     except Exception:
-        main.log("❌ _post_jprx 响应解析失败: %s" % resp.text)
+        _log("❌ _post_jprx 响应解析失败: %s" % resp.text)
         j = None
+
+    # 调用 event_report 发送事件日志
+    event_report(session, biz_obj, uuid_str, host_sign)
     return j
 
 
@@ -606,6 +692,7 @@ def _extract_resp(res):
 
 
 def get_device_token(session: cycronet.CronetClient = None) -> dict:
+    global host_sign
     """
     纯 Python 两阶段获取 deviceToken (placeOrder 的 deviceToken)。
     返回 dict: {ok, deviceToken, ret, ...} 与 JS 版一致。
@@ -621,9 +708,9 @@ def get_device_token(session: cycronet.CronetClient = None) -> dict:
 
     # 阶段一: 本地无 riskToken 时首包补全
     if not state["riskToken"]:
-        r1 = _build_request_body(uuid_str, "", state["ticketID"])
+        r1, biz1 = _build_request_body(uuid_str, "", state["ticketID"])
         try:
-            res1 = _post_jprx(session, r1, host_sign)
+            res1 = _post_jprx(session, r1, biz1, uuid_str, host_sign)
         except Exception as e:
             return {"ok": False, "error": "stage1 network: %s" % e}
         resp1 = _extract_resp(res1)
@@ -641,9 +728,9 @@ def get_device_token(session: cycronet.CronetClient = None) -> dict:
                 "overtime": resp1.get("overtime")}
 
     # 阶段二: type=1 换取最终 msgBlock
-    r2 = _build_request_body(uuid_str, state["riskToken"], state["ticketID"])
+    r2, biz2 = _build_request_body(uuid_str, state["riskToken"], state["ticketID"])
     try:
-        res2 = _post_jprx(session, r2, host_sign)
+        res2 = _post_jprx(session, r2, biz2, uuid_str, host_sign)
     except Exception as e:
         return {"ok": False, "error": "stage2 network: %s" % e}
     resp2 = _extract_resp(res2)
@@ -670,7 +757,6 @@ def get_device_token(session: cycronet.CronetClient = None) -> dict:
 #  用两段真实抓包会话演示: 从 token 反解 content_key -> 反查 uuid -> 解密 content
 #  详细步骤说明见同目录 tdid.md 第 5 节。
 # ============================================================================
-# 阶段一 (type=0): 从 token 反解出 content_key/uuid, 再解 content
 SESSION_STAGE1 = {
     "type": "0",
     "timestamp": "1785660553620",
@@ -680,7 +766,6 @@ SESSION_STAGE1 = {
     ),
 }
 
-# 阶段二 (type=1): token 无法离线解, 但 content 可用同设备 content_key 解密
 SESSION_STAGE2 = {
     "type": "1",
     "timestamp": "1785660826320",
@@ -696,23 +781,19 @@ def _demo():
 
     s1 = SESSION_STAGE1
     print("[阶段一 type=0] timestamp =", s1["timestamp"])
-    # 步骤2: 从 token 反解 content_key
     content_key, day_start = recover_u_from_type0_token(s1["token"], s1["timestamp"])
     print("  当天0点毫秒(XXTEA 密钥) =", day_start)
     print("  ★ 反解出 content_key =", content_key)
-    # 步骤3: 从 content_key 反查设备 uuid, 并闭环校验
     uuid = recover_uuid_from_u(content_key)
     print("  ★ content_key 的明文(设备 UUID) =", repr(uuid))
     print("  闭环校验 derive_u(uuid)==content_key ?",
           "OK" if derive_u(uuid) == content_key else "FAIL")
-    # 步骤4: 用 content_key 解密 content
     plain1 = decrypt_content_by_u(s1["content"], content_key)
     print("  content 明文(前 300 字) =\n   ", (plain1 or "")[:300], "...\n")
 
     s2 = SESSION_STAGE2
     print("[阶段二 type=1] timestamp =", s2["timestamp"])
     print("  token 为服务端风控密文, 无法离线解密 (需服务端密钥)")
-    # 步骤5: type=1 的 content 仍可用同一设备的 content_key 解密
     plain2 = decrypt_content_by_u(s2["content"], content_key)
     print("  用同设备 content_key 解密 content 明文(前 300 字) =\n   ", (plain2 or "")[:300], "...")
 

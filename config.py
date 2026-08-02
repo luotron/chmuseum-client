@@ -16,7 +16,9 @@ ALL_CONFIG_URL = (
 PRICE_URL = "https://wxmini.chnmuseum.cn/prod-api/pool/ingore/getPriceByScheduleId"
 GETBLOCK_URL = "https://wxmini.chnmuseum.cn/prod-api/pool/getBlock"
 PLACEORDER_URL = "https://wxmini.chnmuseum.cn/prod-api/config/orderRule/placeOrder"
+FRONTPAGE_URL = "https://wxmini.chnmuseum.cn/prod-api/risk/frontPage"
 CHECKTIME_URL = "https://vv.video.qq.com/checktime?otype=json"
+
 
 # ============================ User-Agent ============================
 UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -32,9 +34,10 @@ POINT_OFFSET = 10                 # 点选坐标 -10 偏移 (Verify 组件 bindi
 PLATFORM = 2                      # 非扫码
 
 
-# ---- 登录 apiToken (JWT), 请按需替换为自己的有效 token ----
-API_TOKEN = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJsb2dpbl91c2VyX25hbWUiOiLmuLjlrqIgMTM2NjM1ODAxOTgiLCJsb2dpbl9leHBpcmVkX3RpbWUiOjE3ODM0MjYxNDk3NjIsImxvZ2luX3VzZXJfaWQiOjM1NjY3MTA2LCJsb2dpbl91c2VyX2tleSI6IjM1NjY3MTA2OmE2ZmYwYjU4LTYxODMtNDUyMC1iMmZlLWRiNWU5YzcwYzczOSIsImxvZ2luX3VzZXJfYWNjb3VudCI6IjEzNjYzNTgwMTk4In0.bf34SgKFxMLI7EdrjCUUhU4DZFsS42QpsA9zyHO4oPs"
-
+# ---- 登录信息, 请按需替换为自己的有效 token、miniOpenId、unionId ----
+API_TOKEN = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJsb2dpbl91c2VyX25hbWUiOiLmuLjlrqIgMTUzMDMwMjE5MDkiLCJsb2dpbl9leHBpcmVkX3RpbWUiOjE3ODU3NDY5NDkxNDcsImxvZ2luX3VzZXJfaWQiOjM2NzEyNzYyLCJsb2dpbl91c2VyX2tleSI6IjM2NzEyNzYyOjdmMmZmMTE4LWJiNjgtNDM1YS1iNGFiLTM0NzI5M2NjNjkzMSIsImxvZ2luX3VzZXJfYWNjb3VudCI6IjE1MzAzMDIxOTA5In0.4e0ViNE8xh8Zb5zi3EP-ntlpdMsGZGZLhp2ijQrAlzI"
+OPENID = "osPfN4seDJhyEgrFmC_DME8Bq3bc"
+UNIONID = "oBJkKwJlk39zaMYbeYeyXziqiktY"
 # ---- 下单实名信息 (与抓包一致, 可按需替换) ----
 ORDER_USER_NAME = "任冬冬"
 ORDER_CERT_INFO = "411326198812112424"
@@ -61,6 +64,7 @@ def build_headers(host_ip=None):
         "User-Agent": UA,
         "Connection": "keep-alive",
         "Accept": "application/json",
+        "Accept-Language": "zh-CN,zh;q=0.9",
         "content-type": "application/json",
         "Host-Ip": host_ip if host_ip else "",
         "Authorization": "Bearer " + API_TOKEN,
