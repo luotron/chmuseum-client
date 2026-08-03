@@ -20,9 +20,11 @@ import json
 import os
 import sys
 import time
+import threading
 import uuid as _uuid
 import http.client
 import cycronet
+
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import config as cfg
@@ -40,8 +42,24 @@ def _log(msg):
     print(msg)
 
 
+def _print_set_cookie(resp, tag=""):
+    """若响应头含 set-cookie 则打印出来 (cycronet resp.headers 为小写键 dict)。"""
+    try:
+        headers = getattr(resp, "headers", None) or {}
+        sc = None
+        for k, v in headers.items():
+            if str(k).lower() == "set-cookie":
+                sc = v
+                break
+        if sc:
+            _log("%sSet-Cookie: %s" % (("[%s] " % tag) if tag else "", sc))
+    except Exception as e:
+        _log("打印 Set-Cookie 异常: %s" % e)
+
+
 
 host_sign = ""
+
 
 
 # ============================================================================
@@ -647,9 +665,22 @@ def event_report(session: cycronet.CronetClient, biz_obj: dict, uuid_str: str, h
     try:
         resp = session.post(_EVENT_REPORT_PATH, headers=headers, data=payload, timeout=8)
         return resp.json()
+
     except Exception as e:
         _log("❌ event_report 请求失败: %s" % e)
         return None
+
+
+def event_report_async(session, biz_obj, uuid_str, host_sign_str=None):
+    """异步发送埋点日志 (后台线程, fire-and-forget)。返回启动的 Thread。"""
+    t = threading.Thread(
+        target=event_report,
+        args=(session, biz_obj, uuid_str, host_sign_str),
+        daemon=True,
+    )
+    t.start()
+    return t
+
 
 
 
@@ -674,14 +705,16 @@ def _post_jprx(session: cycronet.CronetClient, body, biz_obj, uuid_str, host_sig
     resp = session.post(_API_PATH, headers=headers,
                         data=payload, timeout=8)
     try:
+
         j = resp.json()
     except Exception:
         _log("❌ _post_jprx 响应解析失败: %s" % resp.text)
         j = None
 
-    # 调用 event_report 发送事件日志
-    event_report(session, biz_obj, uuid_str, host_sign)
+    # 异步发送埋点日志 (后台线程, 不阻塞主流程)
+    event_report_async(session, biz_obj, uuid_str, host_sign)
     return j
+
 
 
 def _extract_resp(res):

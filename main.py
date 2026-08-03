@@ -51,9 +51,17 @@ from api import log
 
 def manualOrder(session, ctx):
     try:
-        block = api.get_block(session, ctx)
+        resp = api.get_block(session, ctx)
+        if not resp:
+            return
+        if resp.get("code") != 200 or not resp.get("data"):
+            raise RuntimeError(json.dumps(resp, ensure_ascii=False)[:200])
+        block = resp["data"]
+        log("getBlock 成功: docType=%s secretKey=%s captchaToken=%s"
+                % (block.get("docType"), block.get("secretKey"), block.get("token")))
     except Exception as e:
         log("getBlock 失败: %s" % e)
+        main()  # 失败重试
         return
     picker = CaptchaPicker(block)
     points = picker.run()
@@ -64,7 +72,7 @@ def manualOrder(session, ctx):
     log("pointJson(加密)=%s..." % point_json_cipher[:40])
     captcha_token = block.get("token")
 
-    device_token = api.get_device_token()
+    device_token = api.get_device_token(session)
     if not device_token:
         log("⚠ 未获得 deviceToken, 仍尝试下单 (可能被风控拒绝)。")
         return
@@ -80,39 +88,54 @@ def manualOrder(session, ctx):
         log("placeOrder 返回: %s" % json.dumps(resp, ensure_ascii=False)[:300])
 
 def main():
+    import config as cfg
+    # 打印所有 cycronet 请求响应的 Set-Cookie (全局 patch, 只需一次)
+    cfg.install_cookie_logger()
     session = cycronet.CronetClient(chrometls="chrome_133")
+
     from utils.captcha_auto import CaptchaAutoRecognizer
     recognizer = CaptchaAutoRecognizer()
     # 0) 先校验登录态 —— checkToken 返回 userInfo 才继续
-    log("Step 0: 校验 apiToken (checkToken) ...")
-    user_info = api.check_token(session)
-    if not user_info:
+    check_info = api.check_token(session)
+    if not check_info:
         log("❌ apiToken 无效或校验失败, 请更新 config.API_TOKEN 后重试。退出。")
+        return
+    user_info = api.get_user_info(session)
+    if not user_info:
+        log("❌ 获取用户信息失败, 请检查网络或 API_TOKEN。退出。")
+        return
+    bind_info = api.get_real_name_bind(session)
+    if not bind_info:
+        log("❌ 获取实名绑定信息失败, 请检查网络或 API_TOKEN。退出。")
         return
     device_token = api.get_device_token(session)
     if not device_token:
         log("⚠ 未获得 deviceToken, 仍尝试下单 (可能被风控拒绝)。")
         device_token = ""
         return
-    log("✅ 登录有效, 继续执行。")
 
     # 1) 扫描 + 锁定 (三者齐备立即停止扫描)
-    log("Step 1: 监控余票 ...")
     ctx = api.scan_for_ticket(session)
     if not ctx:
         return
 
     # 2) getBlock 验证码
-    log("Step 2: 获取验证码 (getBlock) ...")
     try:
-        block = api.get_block(session, ctx)
+        resp = api.get_block(session, ctx)
+        if not resp:
+            return
+        if resp.get("code") != 200 or not resp.get("data"):
+            raise RuntimeError(json.dumps(resp, ensure_ascii=False)[:200])
+        block = resp["data"]
+        log("getBlock 成功: docType=%s secretKey=%s captchaToken=%s"
+                % (block.get("docType"), block.get("secretKey"), block.get("token")))
     except Exception as e:
         log("getBlock 失败: %s" % e)
+        main()  # 失败重试
         return
 
     # 3) 验证码识别
     points = None
-    log("Step 3: 尝试自动识别验证码...")
     # 检查API是否可用
     if recognizer.check_api_available():
         log("本地模型API可用，开始识别...")
@@ -140,13 +163,12 @@ def main():
     
     # 如果自动识别失败或模式为manual，使用手动识别
     if not points:
-        log("Step 3: 弹出验证码窗口，请点选目标图案后点『确认提交』...")
+        log("弹出验证码窗口，请点选目标图案后点『确认提交』...")
         picker = CaptchaPicker(block)
         points = picker.run()
         if not points:
             log("已取消点选, 退出。")
             return
-    
     if not points:
         log("❌ 验证码识别失败，退出。")
         return
@@ -156,16 +178,12 @@ def main():
     log("pointJson(加密)=%s..." % point_json_cipher[:40])
     captcha_token = block.get("token")
 
-    # 5) deviceToken
-    log("Step 4: 获取 deviceToken ...")
     device_token = api.get_device_token(session)
     if not device_token:
         log("⚠ 未获得 deviceToken, 仍尝试下单 (可能被风控拒绝)。")
         device_token = ""
 
     time.sleep(random.uniform(0.5, 1.0))
-    # 6) placeOrder
-    log("Step 5: 提交下单 (placeOrder) ...")
     resp = api.place_order(session, ctx, point_json_cipher, captcha_token, device_token)
     if resp.get("code") == 200 and resp.get("data"):
         d = resp["data"]

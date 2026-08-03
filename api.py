@@ -9,6 +9,7 @@ import base64
 import json
 import os
 import random
+import threading
 import time
 from datetime import datetime
 import cycronet
@@ -21,6 +22,23 @@ from utils import tdid as tdid_client
 def log(msg):
     ts = datetime.now().strftime("%H:%M:%S")
     print("[%s] %s" % (ts, msg))
+
+
+def print_set_cookie(resp, tag=""):
+    """若响应头含 set-cookie 则打印出来 (cycronet resp.headers 为小写键 dict)。"""
+    try:
+        headers = getattr(resp, "headers", None) or {}
+        # headers 键为小写; 兼容大小写逐一查找
+        sc = None
+        for k, v in headers.items():
+            if str(k).lower() == "set-cookie":
+                sc = v
+                break
+        if sc:
+            log("%sSet-Cookie: %s" % (("[%s] " % tag) if tag else "", sc))
+    except Exception as e:
+        log("打印 Set-Cookie 异常: %s" % e)
+
 
 
 # ============================================================================
@@ -55,11 +73,64 @@ def check_token(session):
 
     user_info = j["userInfo"]
     cfg.USER_ID = str(user_info.get("userId") or "")
-    _save_login_info(user_info)
-    log("checkToken 成功: userId=%s userName=%s nickName=%s"
-        % (user_info.get("userId"), user_info.get("userName"),
-           user_info.get("nickName")))
+    # log("checkToken 成功: userId=%s userName=%s nickName=%s"
+    #     % (user_info.get("userId"), user_info.get("userName"),
+    #        user_info.get("nickName")))
     return user_info
+
+
+def get_user_info(session):
+    """
+    GET /prod-api/getUserInfoToIndividual2Mini?p=wxmini
+    查询用户信息, 返回 user dict (含 userId/userName/nickName/...), 失败返回 None。
+    """
+    try:
+        resp = session.get(cfg.USER_INFO_URL, headers=cfg.build_headers(), timeout=8)
+        if resp.status_code != 200:
+            log("getUserInfo HTTP %s" % resp.status_code)
+            return None
+        j = resp.json()
+    except Exception as e:
+        log("getUserInfo 异常: %s" % e)
+        return None
+    if j.get("code") != 200 or not j.get("user"):
+        log("getUserInfo 失败: %s" % json.dumps(j, ensure_ascii=False)[:200])
+        return None
+    user = j["user"]
+    log("getUserInfo 成功: userId=%s userName=%s nickName=%s"
+        % (user.get("userId"), user.get("userName"), user.get("nickName")))
+    return user
+
+
+def get_real_name_bind(session):
+    """
+    GET /prod-api/realName/v1/isBind?p=wxmini
+    查询下单实名信息, 返回 data dict。若已绑定实名, 把 userName/certificateInfo
+    回填到 cfg.ORDER_USER_NAME / cfg.ORDER_CERT_INFO。失败返回 None。
+    """
+    try:
+        resp = session.get(cfg.ISBIND_URL, headers=cfg.build_headers(), timeout=8)
+        if resp.status_code != 200:
+            log("isBind HTTP %s" % resp.status_code)
+            return None
+        j = resp.json()
+    except Exception as e:
+        log("isBind 异常: %s" % e)
+        return None
+    if j.get("code") != 200 or not j.get("data"):
+        log("isBind 失败: %s" % json.dumps(j, ensure_ascii=False)[:200])
+        return None
+    data = j["data"]
+    if data.get("bindRealName") and data.get("userName") and data.get("certificateInfo"):
+        cfg.ORDER_USER_NAME = data["userName"]
+        cfg.ORDER_CERT_INFO = data["certificateInfo"]
+        log("isBind 成功: 已回填实名 userName=%s certificate=%s(%s)"
+            % (data.get("userName"), data.get("certificateInfo"),
+               data.get("certificateName")))
+    else:
+        log("isBind: 未绑定实名或信息不全: %s" % json.dumps(data, ensure_ascii=False)[:200])
+    return data
+
 
 
 def _save_login_info(user_info):
@@ -174,14 +245,10 @@ def build_nonce(session, hall_id, schedule_id, date_str):
 # ============================================================================
 #  1.5 risk/frontPage — 风控前置校验 (每次扫描 ALL_CONFIG 前调用)
 # ============================================================================
-def front_page(session, device_token=None):
+def _front_page_worker(session, device_token=None):
     """
-    调 /prod-api/risk/frontPage 做风控前置校验。
-    请求体 code 为 get_device_token() 返回的 deviceToken (msgBlock)。
-    device_token 为空时自动调 get_device_token() 获取。
-    返回响应 data dict (含 strategy/uuId/prompt), 失败返回 None。
+    frontPage 实际请求逻辑 (同步执行)。返回 data dict, 失败返回 None。
     """
-    now_str = datetime.now().strftime("%H:%M:%S")
     if not device_token:
         device_token = get_device_token(session)
     if not device_token:
@@ -218,17 +285,71 @@ def front_page(session, device_token=None):
         return None
 
     data = j.get("data", {}) or {}
-    # print("[%s] frontPage 成功: strategy=%s uuId=%s prompt=%s"
-    #     % (now_str, data.get("strategy"), data.get("uuId"), data.get("prompt")), end="\r")
     return data
+
+
+def front_page(session, device_token=None, async_mode=True):
+    """
+    调 /prod-api/risk/frontPage 做风控前置校验。
+    请求体 code 为 get_device_token() 返回的 deviceToken (msgBlock)。
+    device_token 为空时自动调 get_device_token() 获取。
+
+    async_mode=True (默认): 异步发出 (后台线程, fire-and-forget), 不阻塞主流程,
+                            立即返回启动的 Thread 对象。
+    async_mode=False: 同步执行, 返回响应 data dict (失败返回 None)。
+    """
+    if async_mode:
+        t = threading.Thread(
+            target=_front_page_worker, args=(session, device_token), daemon=True
+        )
+        t.start()
+        return t
+    return _front_page_worker(session, device_token)
+
 
 
 # ============================================================================
 #  2. 余票扫描 + 锁定 hallId / scheduleId / priceId
 # ============================================================================
+def gain_user_contacter_list(session):
+    """
+    GET /prod-api/basesetting/HallSetting/gainUserContacterList?p=wxmini
+    查询常用联系人列表。返回 data (list), 失败返回 None。
+    """
+    try:
+        resp = session.get(cfg.CONTACTER_LIST_URL, headers=cfg.build_headers(), timeout=5)
+        if resp.status_code == 200:
+            res_json = resp.json()
+            if res_json.get("code") == 200:
+                return res_json.get("data", []) or []
+    except Exception as e:
+        log("gainUserContacterList 异常: %s" % e)
+    return None
+
+
+def get_order_info_by_status(session):
+    """
+    GET /prod-api/order/OrderInfo/getOrderInfoByStatus?hallType=91&status=1&p=wxmini
+    查询指定状态订单信息。返回 data (list), 失败返回 None。
+    """
+    try:
+        resp = session.get(cfg.ORDER_INFO_BY_STATUS_URL, headers=cfg.build_headers(), timeout=5)
+        if resp.status_code == 200:
+            res_json = resp.json()
+            if res_json.get("code") == 200:
+                return res_json.get("data", []) or []
+    except Exception as e:
+        log("getOrderInfoByStatus 异常: %s" % e)
+    return None
+
+
 def fetch_price_details(session, hall_id, schedule_id, query_date):
 
     """查询指定场次的详细票价, 返回 price 列表 (含 priceId / ticketPool)"""
+    # 与小程序流程一致: 查价格前先请求联系人列表与订单状态接口
+    get_order_info_by_status(session)
+    gain_user_contacter_list(session)
+
     params = {
         "hallId": hall_id,
         "openPerson": "1",
@@ -271,7 +392,6 @@ def scan_for_ticket(session):
         try:
             # 每次拉取 ALL_CONFIG 前先做风控前置校验 (code = deviceToken)
             front_page(session)
-            time.sleep(random.uniform(0.5, 1.0))
             resp = session.get(cfg.ALL_CONFIG_URL, headers=cfg.build_headers(), timeout=5)
 
             if resp.status_code != 200:
@@ -441,19 +561,13 @@ def get_block(session, ctx):
         "docType": "1",
         "p": "wxmini",
     }
-    log("请求 getBlock ...")
     resp = session.get(cfg.GETBLOCK_URL, headers=cfg.build_headers(), params=params, timeout=8)
-    if resp.status_code != 200:
-        raise RuntimeError("getBlock HTTP %s" % resp.status_code)
-    j = resp.json()
-    if j.get("code") != 200 or not j.get("data"):
-        raise RuntimeError("getBlock 失败: %s" % json.dumps(j, ensure_ascii=False)[:200])
-    d = j["data"]
-    log("getBlock 成功: docType=%s secretKey=%s captchaToken=%s"
-        % (d.get("docType"), d.get("secretKey"), d.get("token")))
-    # 把验证码图片与提示图保存到本地
-    _save_captcha_images(d)
-    return d
+    try:
+        j = resp.json()
+    except Exception:
+        log("getBlock 响应非 JSON: %s" % resp.text[:200])
+        return None
+    return j
 
 
 # ============================================================================
@@ -516,7 +630,6 @@ def place_order(session, ctx, point_json_cipher, captcha_token, device_token):
     }
     # 下单前实时调 checktime 取公网 IP 并按小程序方式加密, 写入 Host-Ip 请求头
     host_ip = build_host_ip(session)
-    log("提交 placeOrder ...")
     resp = session.post(
         cfg.PLACEORDER_URL, headers=cfg.build_headers(host_ip=host_ip),
         data=json.dumps(body, ensure_ascii=False).encode("utf-8"),
