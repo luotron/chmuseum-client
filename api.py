@@ -348,6 +348,7 @@ def fetch_price_details(session, hall_id, schedule_id, query_date):
     """查询指定场次的详细票价, 返回 price 列表 (含 priceId / ticketPool)"""
     # 与小程序流程一致: 查价格前先请求联系人列表与订单状态接口
     get_order_info_by_status(session)
+    time.sleep(random.uniform(0.1, 0.5))
     gain_user_contacter_list(session)
 
     params = {
@@ -392,6 +393,7 @@ def scan_for_ticket(session):
         try:
             # 每次拉取 ALL_CONFIG 前先做风控前置校验 (code = deviceToken)
             front_page(session)
+            time.sleep(random.uniform(1.0, 5.0))
             resp = session.get(cfg.ALL_CONFIG_URL, headers=cfg.build_headers(), timeout=5)
 
             if resp.status_code != 200:
