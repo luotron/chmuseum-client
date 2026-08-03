@@ -119,6 +119,7 @@ def main():
     if not ctx:
         return
 
+    time.sleep(random.uniform(1.0, 2.0))
     # 2) getBlock 验证码
     try:
         resp = api.get_block(session, ctx)
@@ -183,7 +184,7 @@ def main():
         log("⚠ 未获得 deviceToken, 仍尝试下单 (可能被风控拒绝)。")
         device_token = ""
 
-    time.sleep(random.uniform(0.5, 1.0))
+    time.sleep(random.uniform(2, 3))
     resp = api.place_order(session, ctx, point_json_cipher, captcha_token, device_token)
     if resp.get("code") == 200 and resp.get("data"):
         d = resp["data"]
@@ -192,7 +193,8 @@ def main():
             % (d.get("orderNumber"), d.get("schduleDate")))
         log("=" * 60)
     elif resp.get("code") == 502:
-        log(resp.get("msg"))
+        log("placeOrder 返回: %s" % json.dumps(resp, ensure_ascii=False)[:300])
+        log("自动识别失败，尝试手动点选验证码...")
         manualOrder(session, ctx)
     else:
         log("placeOrder 返回: %s" % json.dumps(resp, ensure_ascii=False)[:300])

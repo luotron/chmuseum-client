@@ -348,9 +348,8 @@ def fetch_price_details(session, hall_id, schedule_id, query_date):
     """查询指定场次的详细票价, 返回 price 列表 (含 priceId / ticketPool)"""
     # 与小程序流程一致: 查价格前先请求联系人列表与订单状态接口
     get_order_info_by_status(session)
-    time.sleep(random.uniform(0.1, 0.5))
+    time.sleep(random.uniform(1, 2))
     gain_user_contacter_list(session)
-
     params = {
         "hallId": hall_id,
         "openPerson": "1",
@@ -369,6 +368,63 @@ def fetch_price_details(session, hall_id, schedule_id, query_date):
     except Exception as e:
         log("查询价格接口异常: %s" % e)
     return []
+
+
+def check_leader_info(session, ctx):
+    """
+    POST /prod-api/config/orderRule/checkLeaderInfo — 校验带队(下单人)信息。
+    请求体与 placeOrder 基础字段一致, 但不含 pointJson/captchaToken/deviceToken。
+    校验通过返回 True (code==200), 否则返回 False。
+    """
+    date = ctx["date"]                 # yyyy-MM-dd
+    use_date = date + " 00:00:00"
+    body = {
+        "useTicketType": 1,
+        "poolFlag": 1,
+        "realNameFlag": 1,
+        "platform": cfg.PLATFORM,
+        "ticketNum": 1,
+        "date": date,
+        "childTicketNum": 0,
+        "saleMode": 1,
+        "ticketInfoList": [
+            {
+                "status": 0,
+                "saleMode": 1,
+                "platform": cfg.PLATFORM,
+                "hallId": int(ctx["hallId"]),
+                "hallScheduleId": int(ctx["scheduleId"]),
+                "cinemaFlag": 0,
+                "ticketPriceId": int(ctx["priceId"]),
+                "certificate": 1,
+                "certificateInfo": cfg.ORDER_CERT_INFO,
+                "userName": cfg.ORDER_USER_NAME,
+                "useDate": use_date,
+                "isChildFreeTicket": 0,
+                "realNameFlag": 1,
+            }
+        ],
+        "p": "wxmini",
+    }
+    try:
+        resp = session.post(
+            cfg.CHECK_LEADER_INFO_URL, headers=cfg.build_headers(),
+            data=json.dumps(body, ensure_ascii=False).encode("utf-8"),
+            timeout=8,
+        )
+        if resp.status_code != 200:
+            log("checkLeaderInfo HTTP %s" % resp.status_code)
+            return False
+        j = resp.json()
+    except Exception as e:
+        log("checkLeaderInfo 异常: %s" % e)
+        return False
+    if j.get("code") == 200:
+        log("checkLeaderInfo 通过: %s" % j.get("msg"))
+        return True
+    log("checkLeaderInfo 未通过: %s" % json.dumps(j, ensure_ascii=False)[:200])
+    return False
+
 
 def is_in_time_range():
     now = datetime.now()
@@ -393,7 +449,7 @@ def scan_for_ticket(session):
         try:
             # 每次拉取 ALL_CONFIG 前先做风控前置校验 (code = deviceToken)
             front_page(session)
-            time.sleep(random.uniform(1.0, 5.0))
+            time.sleep(random.uniform(1.0, 2.0))
             resp = session.get(cfg.ALL_CONFIG_URL, headers=cfg.build_headers(), timeout=5)
 
             if resp.status_code != 200:
@@ -472,6 +528,9 @@ def scan_for_ticket(session):
                                     % (p_name, p_id, p_pool))
                                 log("   日期: %s" % target_date)
                                 log("=" * 60)
+                                time.sleep(random.uniform(1, 2))
+                                # 锁定后、下单前先校验带队(下单人)信息
+                                check_leader_info(session, ctx)
                                 return ctx
 
             if found_any_hall:
