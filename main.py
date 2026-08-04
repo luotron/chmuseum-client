@@ -108,11 +108,11 @@ def main():
     if not bind_info:
         log("❌ 获取实名绑定信息失败, 请检查网络或 API_TOKEN。退出。")
         return
-    device_token = api.get_device_token(session)
-    if not device_token:
-        log("⚠ 未获得 deviceToken, 仍尝试下单 (可能被风控拒绝)。")
-        device_token = ""
-        return
+    # device_token = api.get_device_token(session)
+    # if not device_token:
+    #     log("⚠ 未获得 deviceToken, 仍尝试下单 (可能被风控拒绝)。")
+    #     device_token = ""
+    #     return
 
     # 1) 扫描 + 锁定 (三者齐备立即停止扫描)
     ctx = api.scan_for_ticket(session)

@@ -40,12 +40,12 @@ PLATFORM = 2                      # 非扫码
 
 
 # ---- 登录信息, 请按需替换为自己的有效 token、miniOpenId、unionId ----
-API_TOKEN = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJsb2dpbl91c2VyX25hbWUiOiJ3YW5lcuWpieWEvyIsImxvZ2luX2V4cGlyZWRfdGltZSI6MTc4NDI1NDg2MjUwMywibG9naW5fdXNlcl9pZCI6MzYwOTA0NTUsImxvZ2luX3VzZXJfa2V5IjoiMzYwOTA0NTU6MmVhMGNhN2QtYzM4ZC00ODBmLTg0YjktMTNmNDk3YTE2NmZjIiwibG9naW5fdXNlcl9hY2NvdW50IjoiMTM1NDYyOTI2NjcifQ.FcLJdyQtFNHXk8ToFQfpYrmHc6P3zuTS43B2Fo55aSw"
-OPENID = "osPfN4tVY151_cgjmptwzCGJMQTW"
-UNIONID = "oBJkKwKyqGnyxcgYcUAGFqTRdArs"
-# ---- 下单实名信息 (与抓包一致, 可按需替换) ----
-ORDER_USER_NAME = "任冬冬"
-ORDER_CERT_INFO = "411326198812112424"
+API_TOKEN = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJsb2dpbl91c2VyX25hbWUiOiLlpKnnqbrvvIjpobrlir_pmo_nvJjvvIkiLCJsb2dpbl9leHBpcmVkX3RpbWUiOjE3ODQyNTQ3Mjk4MzIsImxvZ2luX3VzZXJfaWQiOjM2MDkwMzU5LCJsb2dpbl91c2VyX2tleSI6IjM2MDkwMzU5OmU0YmI0NjMwLWVmZTktNDYxZC1hNWU2LWYxZjgyOWZiZmRiZCIsImxvZ2luX3VzZXJfYWNjb3VudCI6IjEzOTM1ODMxMjkxIn0.2xwIuOnp2GrilODk_1Dk4MHe06bx7sax3O_dzJ7Aeq4"
+OPENID = "osPfN4KloruyBEHLORUY148_cfjm"
+UNIONID = "oBJkKwO4Na-1_IrDi0TljIeKGnuY"
+# ---- 下单实名信息 留空则自动回填 ----
+ORDER_USER_NAME = ""
+ORDER_CERT_INFO = ""
 
 # ---- 用户 userId (nonce 明文需要); 留空则由 checkToken 成功后自动回填 ----
 USER_ID = ""
