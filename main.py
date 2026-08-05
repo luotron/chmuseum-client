@@ -89,9 +89,9 @@ def manualOrder(session, ctx):
         log("placeOrder 返回: %s" % json.dumps(resp, ensure_ascii=False)[:300])
 
 def main():
-    import config as cfg
     # 打印所有 cycronet 请求响应的 Set-Cookie (全局 patch, 只需一次)
-    cfg.install_cookie_logger()
+    # import config as cfg
+    # cfg.install_cookie_logger()
     session = cycronet.CronetClient(chrometls="chrome_133")
 
     from utils.captcha_auto import CaptchaAutoRecognizer
@@ -109,12 +109,15 @@ def main():
     if not bind_info:
         log("❌ 获取实名绑定信息失败, 请检查网络或 API_TOKEN。退出。")
         return
-    # device_token = api.get_device_token(session)
-    # if not device_token:
-    #     log("⚠ 未获得 deviceToken, 仍尝试下单 (可能被风控拒绝)。")
-    #     device_token = ""
-    #     return
+    # 设置风控参数
+    os.environ['TDID_PLUGIN_CODE'] = '0f5f79aee9b174f340e8f6d3704a6e29b101ba2353ddde239e60e2a3c2b07974'
+    os.environ['TDID_HOST_SIGN'] = '{"noncestr":"02be882ced06c9b5aa04ebf6d54ceda4","timestamp":1785939102,"signature":"3fe337f24cee505e9573ce3cd540630f2b58658a"}'
 
+    device_token = api.get_device_token(session)
+    if not device_token:
+        log("⚠ 未获得 deviceToken, 仍尝试下单 (可能被风控拒绝)。")
+        device_token = ""
+        return
     # 1) 扫描 + 锁定 (三者齐备立即停止扫描)
     ctx = api.scan_for_ticket(session)
     if not ctx:

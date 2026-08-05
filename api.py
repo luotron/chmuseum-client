@@ -23,24 +23,6 @@ def log(msg):
     ts = datetime.now().strftime("%H:%M:%S")
     print("[%s] %s" % (ts, msg))
 
-
-def print_set_cookie(resp, tag=""):
-    """若响应头含 set-cookie 则打印出来 (cycronet resp.headers 为小写键 dict)。"""
-    try:
-        headers = getattr(resp, "headers", None) or {}
-        # headers 键为小写; 兼容大小写逐一查找
-        sc = None
-        for k, v in headers.items():
-            if str(k).lower() == "set-cookie":
-                sc = v
-                break
-        if sc:
-            log("%sSet-Cookie: %s" % (("[%s] " % tag) if tag else "", sc))
-    except Exception as e:
-        log("打印 Set-Cookie 异常: %s" % e)
-
-
-
 # ============================================================================
 #  0. checkToken — 校验 apiToken 有效性, 返回 userInfo
 # ============================================================================
@@ -99,6 +81,11 @@ def get_user_info(session):
     user = j["user"]
     log("getUserInfo 成功: userId=%s userName=%s nickName=%s"
         % (user.get("userId"), user.get("userName"), user.get("nickName")))
+    # 把用户信息写入账号文件 cache/login/{userId}.json 的 login.userInfo
+    try:
+        tdid_client.save_user_info(user)
+    except Exception as e:
+        log("保存 userInfo 失败: %s" % e)
     return user
 
 
@@ -133,19 +120,8 @@ def get_real_name_bind(session):
 
 
 
-def _save_login_info(user_info):
-    """把登录信息 (userInfo + apiToken + 时间) 保存到本地 json"""
-    record = {
-        "savedAt": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "apiToken": cfg.API_TOKEN,
-        "userInfo": user_info,
-    }
-    try:
-        with open(cfg.LOGIN_INFO_FILE, "w", encoding="utf-8") as f:
-            json.dump(record, f, ensure_ascii=False, indent=2)
-        log("登录信息已保存: %s" % cfg.LOGIN_INFO_FILE)
-    except Exception as e:
-        log("保存登录信息失败: %s" % e)
+# 说明: 登录信息已改由 utils/tdid.py 合并写入 cache/login/{userId}.json
+# (首次 type=0 请求成功时按 userId 绑定; 旧的独立落盘机制已移除)。
 
 
 # ============================================================================
@@ -344,12 +320,7 @@ def get_order_info_by_status(session):
 
 
 def fetch_price_details(session, hall_id, schedule_id, query_date):
-
     """查询指定场次的详细票价, 返回 price 列表 (含 priceId / ticketPool)"""
-    # 与小程序流程一致: 查价格前先请求联系人列表与订单状态接口
-    get_order_info_by_status(session)
-    time.sleep(random.uniform(1, 2))
-    gain_user_contacter_list(session)
     params = {
         "hallId": hall_id,
         "openPerson": "1",
@@ -495,6 +466,9 @@ def scan_for_ticket(session):
                         if sch_pool <= 0:
                             continue
 
+                        # 与小程序流程一致: 查价格前先请求联系人列表与订单状态接口
+                        get_order_info_by_status(session)
+                        gain_user_contacter_list(session)
                         # 场次有余票 -> 查 priceId
                         price_list = fetch_price_details(
                             session, hall_id, schedule_id, target_date

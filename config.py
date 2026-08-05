@@ -1,10 +1,11 @@
 """
-bm_config.py — 国博下单工具的全局配置与常量
+config.py — 国博下单工具的全局配置与常量
 ================================================================================
 运行前请按需替换 API_TOKEN / 实名信息。USER_ID 会在 checkToken 成功后自动回填。
 """
 
 import os
+import platform
 
 # ============================ 接口 URL ============================
 CHECKTOKEN_URL = "https://uu.chnmuseum.cn/prod-api/api/checkToken"
@@ -27,15 +28,18 @@ CHECKTIME_URL = "https://vv.video.qq.com/checktime?otype=json"
 
 # ============================ 运行环境切换 ============================
 # ENV 取值: "linux" 或 "windows"。用于统一切换 User-Agent 与设备指纹 (tdid._DEV)。
-# 可通过环境变量 MUSEUM_ENV 覆盖 (export MUSEUM_ENV=windows)。
-ENV = os.environ.get("MUSEUM_ENV", "linux").strip().lower()
-if ENV not in ("linux", "windows"):
-    ENV = "linux"
+# 通过 platform.system() 自动判断当前操作系统:
+#   Windows -> "windows"; 其余 (Linux/macOS 等) -> "linux"。
+ENV = "windows" if platform.system().lower().startswith("win") else "linux"
 
 
 # ============================ User-Agent ============================
 # 两套 User-Agent, 按 ENV 选择
-_UA_LINUX = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36 MicroMessenger/7.0.20.1781(0x6700143B) NetType/WIFI MiniProgramEnv/Windows WindowsWechat/WMPF WindowsWechat(0x63090a13) UnifiedPCLinuxWechat(0xf2741104) XWEB/14910"
+_UA_LINUX = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/126.0.0.0 Safari/537.36 MicroMessenger/7.0.20.1781(0x6700143B) NetType/WIFI "
+    "MiniProgramEnv/Windows WindowsWechat/WMPF WindowsWechat(0x63090a13) "
+    "UnifiedPCLinuxWechat(0xf2741104) XWEB/14910"
+)
 _UA_WINDOWS = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
     "Chrome/132.0.0.0 Safari/537.36 MicroMessenger/7.0.20.1781(0x6700143B) NetType/WIFI "
@@ -110,8 +114,6 @@ ORDER_CERT_INFO = ""
 # ---- 用户 userId (nonce 明文需要); 留空则由 checkToken 成功后自动回填 ----
 USER_ID = ""
 
-# ---- 登录信息落盘文件 (checkToken 成功后保存 userInfo) ----
-LOGIN_INFO_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cache", "login_info.json")
 
 # ---- 验证码图片落盘目录 (getBlock 时保存验证码图 + 提示图) ----
 CAPTCHA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cache", "captcha")

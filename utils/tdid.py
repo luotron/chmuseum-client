@@ -42,21 +42,6 @@ def _log(msg):
         pass
     print(msg)
 
-
-def _print_set_cookie(resp, tag=""):
-    """若响应头含 set-cookie 则打印出来 (cycronet resp.headers 为小写键 dict)。"""
-    try:
-        headers = getattr(resp, "headers", None) or {}
-        sc = None
-        for k, v in headers.items():
-            if str(k).lower() == "set-cookie":
-                sc = v
-                break
-        if sc:
-            _log("%sSet-Cookie: %s" % (("[%s] " % tag) if tag else "", sc))
-    except Exception as e:
-        _log("打印 Set-Cookie 异常: %s" % e)
-
 # ============================================================================
 #  Base64 (标准表 A-Za-z0-9+/=)
 # ============================================================================
@@ -423,6 +408,40 @@ def generate_mock_plugin_code() -> str:
     # 32 字节 * 2 个字符/字节 = 64 个字符长度的字符串。
     return secrets.token_hex(32)
 
+
+def generate_mock_canvas_fingerprint(seed: str = "") -> str:
+    """
+    伪造一个 deviceObj["1006"] 的“原始特征”—— OffscreenCanvas 指纹。
+
+    背景 (见 app-service.js 模块 1304 f7c96989f):
+        真实 SDK 用 wx.createOffscreenCanvas({type:"2d",...}) 绘制一组固定的
+        多语言 + emoji 文本, 取 canvas.toDataURL("image/png") 作为原始特征。
+        该原始特征随后被 hash32 + XXTEA + Base64 处理成 deviceObj["1006"]
+        (处理逻辑见 _make_device1006), 因此后端拿到的只是它的哈希, 无法还原图像。
+
+    本函数不依赖任何 canvas 环境, 直接构造一个形如
+        "data:image/png;base64,...." 的伪 dataURL 字符串。
+    为模拟真实设备“同一台机器指纹稳定、不同机器指纹不同”的特性:
+        - 传入固定 seed (推荐用设备 uuid) 时, 输出【确定性稳定】;
+        - seed 为空时, 退回随机生成 (每次不同)。
+
+    注意: 只要每台模拟设备的 seed 稳定, hash32(dataURL) 就稳定,
+    最终 1006 只有末尾的时间戳在变, 最贴近真实设备行为。
+    """
+    if seed:
+        # 用 seed 确定性派生 192 字节伪 PNG 数据 (SHA-256 反复扩展)
+        import hashlib
+        blob = b""
+        counter = 0
+        while len(blob) < 192:
+            blob += hashlib.sha256((str(seed) + ":canvas1006:" + str(counter)).encode("utf-8")).digest()
+            counter += 1
+        blob = blob[:192]
+    else:
+        blob = secrets.token_bytes(192)
+    import base64 as _b64
+    return "data:image/png;base64," + _b64.b64encode(blob).decode("ascii")
+
 # 兼容旧调用名
 p2baeeec4 = s_encrypt
 
@@ -434,30 +453,48 @@ _CHANNEL = "109045"
 _API_PATH = "https://browsertdidticket.m.qq.com/jprx/1941"
 _EVENT_REPORT_PATH = "https://gatherer.m.qq.com/event/report"
 
-# 状态文件统一落盘到 cache/tdid_state.json (与 login_info.json 同目录)
+# ============================================================================
+#  登录信息 + TDID 状态 合并落盘 (每账号一个文件 cache/login/{userId}.json)
+# ----------------------------------------------------------------------------
+#  设计:
+#    - 一个登录账号 (userId) 对应一个文件 cache/login/{userId}.json。
+#    - 文件把【登录信息】(apiToken/openid/unionid/userInfo) 与
+#      【TDID 设备状态】({uuid, riskToken, ticketID}) 绑定在一起。
+#    - 绑定时机: 某 userId 第一次调用 get_device_token 发出 type=0 请求成功时,
+#      即视为该账号完成设备绑定, 写入此文件 (boundAt 记录绑定时间)。
+#    - 后续该 userId 复用同一 uuid/riskToken/ticketID, 不再重新生成。
+#
+#  文件结构示例:
+#    {
+#      "userId": "36089606",
+#      "boundAt": "2026-...",   "savedAt": "2026-...",
+#      "login":  {"apiToken": "...", "openid": "...", "unionId": "...", "userInfo": {...}},
+#      "tdidState": {"uuid": "...", "riskToken": "...", "ticketID": "..."}
+#    }
+# ============================================================================
 _CACHE_DIR = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "cache"))
-_STATE_FILE = os.path.join(_CACHE_DIR, "tdid_state.json")
-# 旧版本状态文件位置 (tdid_state.json); 首次加载时自动迁移到 cache 目录
-_LEGACY_STATE_FILE = os.path.abspath(
-    os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "tdid_state.json")
-)
+_LOGIN_DIR = os.path.join(_CACHE_DIR, "login")
 
-# 设备指纹字段 (与 JS DEV 表一致)
-FT_OFFSCREEN_CANVAS = ""
-X_WECHAT_HOSTSIGN = ''
-PLUGIN_CODE = ""
+# 空 TDID 状态模板
+_EMPTY_STATE = {"uuid": "", "riskToken": "", "ticketID": ""}
+
+
+def _current_user_id():
+    """当前登录账号 id (checkToken 成功后回填到 cfg.USER_ID)。取不到返回 ''。"""
+    try:
+        return str(cfg.USER_ID or "").strip()
+    except Exception:
+        return ""
+
+
+def _user_login_file(user_id):
+    """账号登录信息文件路径 cache/login/{userId}.json。"""
+    return os.path.join(_LOGIN_DIR, "%s.json" % user_id)
 
 
 def _build_dev():
-    """
-    根据 config.ENV 选择 linux / windows 两套设备指纹,
-    并动态填充 101(OPENID) 与 130(pluginCode)。
-    """
     dev = cfg.get_device_profile()
     dev["101"] = cfg.OPENID
-    # windows 环境保留其内置 130 (真实 pluginCode); linux 环境用抓包值或随机 mock
-    if not dev.get("130"):
-        dev["130"] = PLUGIN_CODE or generate_mock_plugin_code()
     return dev
 
 
@@ -466,38 +503,106 @@ ENV = cfg.ENV
 _DEV = _build_dev()
 
 
-def _load_state():
-    """读取状态文件; 若 cache 里没有但旧位置有, 自动迁移过来。"""
-    for path in (_STATE_FILE, _LEGACY_STATE_FILE):
-        try:
-            if os.path.exists(path):
-                with open(path, "r", encoding="utf-8") as f:
-                    s = json.load(f)
-                state = {
-                    "uuid": s.get("uuid") or "",
-                    "riskToken": s.get("riskToken") or "",
-                    "ticketID": s.get("ticketID") or "",
-                }
-                # 命中旧位置 -> 迁移到 cache 目录
-                if path == _LEGACY_STATE_FILE:
-                    _save_state(state)
-                    try:
-                        os.remove(_LEGACY_STATE_FILE)
-                    except Exception:
-                        pass
-                return state
-        except Exception:
-            continue
-    return {"uuid": "", "riskToken": "", "ticketID": ""}
-
-
-def _save_state(state):
+def _read_login_record(user_id):
+    """读取账号文件 cache/login/{userId}.json 的完整 JSON; 不存在/失败返回 None。"""
+    if not user_id:
+        return None
+    path = _user_login_file(user_id)
     try:
-        os.makedirs(_CACHE_DIR, exist_ok=True)
-        with open(_STATE_FILE, "w", encoding="utf-8") as f:
-            json.dump(state, f, ensure_ascii=False, indent=2)
+        if os.path.exists(path):
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
     except Exception:
         pass
+    return None
+
+
+def _load_state(user_id=None):
+    """
+    读取指定账号的 TDID 设备状态 {uuid, riskToken, ticketID}。
+      - 已绑定: 读 cache/login/{userId}.json 的 tdidState;
+      - 未绑定 (账号文件不存在): 返回空模板, uuid 稍后由调用方生成,
+        待首次 type=0 成功再由 _save_login_record 正式绑定写入。
+    """
+    if user_id is None:
+        user_id = _current_user_id()
+    rec = _read_login_record(user_id)
+    if rec and isinstance(rec.get("tdidState"), dict):
+        ts = rec["tdidState"]
+        return {
+            "uuid": ts.get("uuid") or "",
+            "riskToken": ts.get("riskToken") or "",
+            "ticketID": ts.get("ticketID") or "",
+        }
+    return dict(_EMPTY_STATE)
+
+
+def _save_login_record(user_id, state, mark_bound=False, user_info=None):
+    """
+    把【登录信息】+【TDID 设备状态】合并写入 cache/login/{userId}.json。
+      state      : {uuid, riskToken, ticketID}
+      mark_bound : True 表示这是首次绑定 (仅当文件里还没有 boundAt 时写入 boundAt)。
+      user_info  : 传入非空 dict 时写入 login.userInfo (get_user_info 时使用);
+                   None 则沿用文件里已有的 userInfo。
+    登录字段 (apiToken/openid/unionId) 取自 config, 将来由 SDK 获取后同样落这里。
+    """
+    if not user_id:
+        # 没有 userId (checkToken 未完成) -> 无法按账号绑定, 跳过落盘
+        _log("⚠️ 无 userId, 跳过账号绑定落盘 (设备状态本次不持久化)")
+        return
+    now = time.strftime("%Y-%m-%d %H:%M:%S")
+    old = _read_login_record(user_id) or {}
+    old_login = old.get("login", {}) or {}
+    record = {
+        "userId": str(user_id),
+        # 首次绑定写 boundAt; 已存在则保留原值
+        "boundAt": old.get("boundAt") or (now if mark_bound else ""),
+        "savedAt": now,
+        "login": {
+            # 全局登录信息: 现从 config 读取, 将来由 SDK 获取后同样写入这里
+            "apiToken": getattr(cfg, "API_TOKEN", "") or old_login.get("apiToken", ""),
+            "openid": getattr(cfg, "OPENID", "") or old_login.get("openid", ""),
+            "unionId": getattr(cfg, "UNIONID", "") or old_login.get("unionId", ""),
+            # userInfo: 本次传入了就更新, 否则沿用已存记录
+            "userInfo": user_info if user_info else (old_login.get("userInfo") or {}),
+        },
+        "tdidState": {
+            "uuid": state.get("uuid") or "",
+            "riskToken": state.get("riskToken") or "",
+            "ticketID": state.get("ticketID") or "",
+        },
+    }
+    try:
+        os.makedirs(_LOGIN_DIR, exist_ok=True)
+        with open(_user_login_file(user_id), "w", encoding="utf-8") as f:
+            json.dump(record, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        _log("❌ 保存账号登录信息失败(%s): %s" % (user_id, e))
+
+
+def save_user_info(user_info, user_id=None):
+    """
+    get_user_info 成功后调用: 把用户信息写入账号文件 login.userInfo。
+    只更新 userInfo, 不改动已绑定的 tdidState (读旧状态原样回写)。
+
+    user_id 优先取 user_info["userId"], 其次 cfg.USER_ID; 取不到则跳过。
+    """
+    if not isinstance(user_info, dict) or not user_info:
+        return
+    if user_id is None:
+        user_id = str(user_info.get("userId") or "").strip() or _current_user_id()
+    if not user_id:
+        _log("⚠️ 无 userId, 跳过写入 userInfo")
+        return
+    state = _load_state(user_id)  # 保留已绑定的 uuid/riskToken/ticketID
+    _save_login_record(user_id, state, mark_bound=False, user_info=user_info)
+
+
+def _save_state(state, user_id=None):
+    """兼容旧接口: 保存设备状态到当前账号文件 (不标记为首次绑定)。"""
+    if user_id is None:
+        user_id = _current_user_id()
+    _save_login_record(user_id, state, mark_bound=False)
 
 
 def _generate_uuid():
@@ -517,11 +622,22 @@ def _make_device1(uuid_str, inner_ts):
 
 
 def _make_device1006(canvas_plain, salt, inner_ts):
+    """
+    由 canvas 原始特征 (dataURL) 生成 deviceObj["1006"], 完整还原
+    app-service.js 行 19936-19940 的处理链:
+
+        r   = hash32(canvas_dataURL, seed=256)          # MurmurHash2, 不可逆
+        key = hash32(salt + "1006", seed=256)           # 派生 XXTEA 密钥
+        1006 = base64( XXTEA( str(r) + "_" + 毫秒时间戳, str(key) ) )
+
+    其中 salt = deviceObj["2"] || deviceObj["1"] (见行 19994 s = e[2]||e[1])。
+    canvas_plain 为空时返回 "" (与 SDK 采集失败时 t[1006]="" 行为一致)。
+    """
     if not canvas_plain:
         return ""
-    r = hash32(canvas_plain, 256)
-    key = hash32((salt or "") + "1006", 256)
-    return s_encrypt(str(r), str(key), True, inner_ts)
+    r = hash32(canvas_plain, 256)                 # ① 原始特征 -> 32 位哈希
+    key = hash32((salt or "") + "1006", 256)      # ② 派生密钥
+    return s_encrypt(str(r), str(key), True, inner_ts)  # ③ XXTEA + Base64 (带时间戳)
 
 
 def _build_business_obj(uuid_str, timestamp, ticket_id, typ):
@@ -532,6 +648,17 @@ def _build_business_obj(uuid_str, timestamp, ticket_id, typ):
     inner_ts = timestamp - 9
     device1 = _make_device1(uuid_str, inner_ts + 4)
     flags = 2 if typ == 0 else 0
+
+    # --- 计算 deviceObj["1006"] 所需的两个输入 ---
+    # 1) salt: 与 JS 一致 = deviceObj["2"] || deviceObj["1"] (行 19994 s = e[2]||e[1])
+    salt_1006 = (ticket_id or "") or device1
+    # 2) canvas 原始特征: 按设备 uuid 确定性伪造 (同一 uuid 稳定, 不同 uuid 不同),
+    #    无需手动输入; 详见 generate_mock_canvas_fingerprint。
+    canvas_raw = generate_mock_canvas_fingerprint(uuid_str)
+    device1006 = _make_device1006(canvas_raw, salt_1006, inner_ts + 5)
+
+    # deviceObj["130"] = wx.pluginLogin code, 每次构建都取最新 (见 get_plugin_code)
+    plugin_code = os.environ.get("TDID_PLUGIN_CODE", "") or generate_mock_plugin_code()
 
     if typ == 0:
         device_obj = {
@@ -545,9 +672,9 @@ def _build_business_obj(uuid_str, timestamp, ticket_id, typ):
             "119": _DEV["119"],
             "121": _DEV["121"], "122": _DEV["122"], "123": _DEV["123"], "124": _DEV["124"],
             "126": _DEV["126"], "127": _DEV["127"], "128": _DEV["128"],
-            "129": _DEV["129"], "130": _DEV["130"],
+            "129": _DEV["129"], "130": plugin_code,
             "1000": "", "1001": "", "1002": "", "1003": "",
-            "1006": _make_device1006(FT_OFFSCREEN_CANVAS, "", inner_ts + 5),
+            "1006": "",
             "1007": "",
             "4001": "", "4002": "", "4003": "", "4004": "",
         }
@@ -558,7 +685,7 @@ def _build_business_obj(uuid_str, timestamp, ticket_id, typ):
             "104": _DEV["104"], "105": _DEV["105"], "107": _DEV["107"],
             "119": _DEV["119"],
             "121": _DEV["121"], "122": _DEV["122"], "123": _DEV["123"], "124": _DEV["124"],
-            "127": _DEV["127"], "128": _DEV["128"], "129": _DEV["129"], "130": _DEV["130"],
+            "127": _DEV["127"], "128": _DEV["128"], "129": _DEV["129"], "130": plugin_code,
             "4004": "",
         }
 
@@ -601,39 +728,6 @@ def _build_request_body(uuid_str, current_risk_token, ticket_id):
         }
     }
     return body, biz_obj
-
-
-def _build_host_sign(noncestr=None, timestamp=None):
-    """
-    还原微信小程序 "插件请求签名" X-WECHAT-HOSTSIGN (见官方文档)。
-
-    请求头形如:
-        X-WECHAT-HOSTSIGN: {"noncestr":"NONCESTR","timestamp":"TIMESTAMP","signature":"SIGNATURE"}
-
-    其中:
-        - NONCESTR : 随机字符串
-        - TIMESTAMP: 生成 NONCESTR 与 SIGNATURE 的 UNIX 秒级时间戳
-        - APPID    : 所在小程序的 AppId (cfg.PLUGIN_APPID)
-        - TOKEN    : 插件 Token, 在小程序插件基本设置中获取 (cfg.PLUGIN_TOKEN)
-
-    签名算法:
-        SIGNATURE = sha1([APPID, NONCESTR, TIMESTAMP, TOKEN].sort().join(''))
-      即: 对四个字符串按字典序 (JS Array.prototype.sort 默认) 排序后直接拼接, 再取 sha1。
-    """
-    import hashlib
-    noncestr = noncestr or os.urandom(16).hex()
-    timestamp = timestamp or int(time.time())
-    appid = cfg.PLUGIN_APPID
-    token = cfg.PLUGIN_TOKEN
-    # JS 数组默认 sort(): 元素转字符串后按 Unicode 码点逐字符比较 (字典序)
-    parts = sorted([str(appid), str(noncestr), str(timestamp), str(token)])
-    signature = hashlib.sha1("".join(parts).encode("utf-8")).hexdigest()
-    return json.dumps(
-        {"noncestr": noncestr, "timestamp": timestamp, "signature": signature},
-        separators=(",", ":"),
-    )
-
-
 
 def event_report(session: cycronet.CronetClient, biz_obj: dict, uuid_str: str, host_sign_str: str = None):
     """
@@ -683,7 +777,7 @@ def event_report(session: cycronet.CronetClient, biz_obj: dict, uuid_str: str, h
     headers = {
         "Host": "gatherer.m.qq.com",
         "Connection": "keep-alive",
-        "X-WECHAT-HOSTSIGN": host_sign_str or _build_host_sign(),
+        "X-WECHAT-HOSTSIGN": host_sign_str,
         "User-Agent": cfg.UA,
         "xweb_xhr": "1",
         "Content-Type": "application/json",
@@ -723,7 +817,7 @@ def _post_jprx(session: cycronet.CronetClient, body, biz_obj, uuid_str, host_sig
     headers = {
         "Host": "browsertdidticket.m.qq.com",
         "Connection": "keep-alive",
-        "X-WECHAT-HOSTSIGN": host_sign or _build_host_sign(),
+        "X-WECHAT-HOSTSIGN": host_sign,
         "User-Agent": cfg.UA,
         "xweb_xhr": "1",
         "Content-Type": "application/json",
@@ -759,19 +853,21 @@ def _extract_resp(res):
 
 
 def get_device_token(session: cycronet.CronetClient = None) -> dict:
-    global X_WECHAT_HOSTSIGN
     """
     纯 Python 两阶段获取 deviceToken (placeOrder 的 deviceToken)。
     返回 dict: {ok, deviceToken, ret, ...} 与 JS 版一致。
     """
     if session is None:
         session = cycronet.CronetClient(chrometls="chrome_133")
-    state = _load_state()
+    # 当前登录账号 (checkToken 后回填 cfg.USER_ID); 设备状态按账号读写
+    user_id = _current_user_id()
+    state = _load_state(user_id)
     if not state["uuid"]:
         state["uuid"] = _generate_uuid()
-        _save_state(state)
+        # 尚未绑定, 先不落盘 (等首次 type=0 成功再正式写入账号文件)
     uuid_str = state["uuid"]
-    host_sign = X_WECHAT_HOSTSIGN or _build_host_sign()
+    # 本次运行统一使用的 X-WECHAT-HOSTSIGN
+    host_sign = os.environ.get("TDID_HOST_SIGN", "")
 
     # 阶段一: 本地无 riskToken 时首包补全
     if not state["riskToken"]:
@@ -787,10 +883,15 @@ def get_device_token(session: cycronet.CronetClient = None) -> dict:
             state["riskToken"] = resp1["token"]
         if resp1.get("dfp") and resp1["dfp"].get("ticketID"):
             state["ticketID"] = resp1["dfp"]["ticketID"]
-        _save_state(state)
         if not state["riskToken"]:
+            # 首包被拒: 不算绑定成功, 也不落盘
             return {"ok": False, "ret": resp1.get("ret"),
                     "error": "stage1 rejected (no riskToken)"}
+        if not state["ticketID"]:
+            return {"ok": False, "ret": resp1.get("ret"),
+                    "error": "stage1 rejected (no ticketID)"}
+        # ★ 该 userId 首次 type=0 成功 -> 视为账号绑定, 合并写入 cache/login/{userId}.json
+        _save_login_record(user_id, state, mark_bound=True)
         return {"ok": True, "deviceToken": resp1["msgBlock"], "ret": 0,
                 "overtime": resp1.get("overtime")}
 
@@ -866,13 +967,19 @@ def _demo():
 
 
 if __name__ == "__main__":
-    if len(sys.argv) > 1 and sys.argv[1] == "--demo":
+    arg = sys.argv[1] if len(sys.argv) > 1 else ""
+    if arg == "--demo":
+        # 抓包解密分析演示 (见 tdid.md 第 5 节)
         _demo()
-    elif len(sys.argv) > 1 and sys.argv[1] == "--sign":
-        noncestr = "6a01a3beb6d4e2f96778f32c858bee46"
-        timestamp = 1785898531
-        X_WECHAT_HOSTSIGN = _build_host_sign(noncestr, timestamp)
-        print("X-WECHAT-HOSTSIGN =", X_WECHAT_HOSTSIGN)
     else:
+        # 默认: 两阶段获取 deviceToken。
+        # 每次运行需刷新的两个风控凭据, 支持两种传入方式:
+        #   1) 命令行:   python utils/tdid.py <host_sign> <plugin_code>
+        #   2) 环境变量: TDID_HOST_SIGN / TDID_PLUGIN_CODE
+        # (命令行参数会写入对应环境变量, 供 get_device_token 内部读取)
+        if len(sys.argv) > 1:
+            os.environ["TDID_HOST_SIGN"] = sys.argv[1]
+        if len(sys.argv) > 2:
+            os.environ["TDID_PLUGIN_CODE"] = sys.argv[2]
         r = get_device_token()
         print(json.dumps(r, ensure_ascii=False))
