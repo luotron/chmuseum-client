@@ -24,6 +24,7 @@ import threading
 import uuid as _uuid
 import http.client
 import cycronet
+import secrets
 
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -413,6 +414,14 @@ def decrypt_content_by_uuid(content_b64, uuid_str):
     """已知设备 uuid, 解密 content (先 derive_u 再解)"""
     return s_decrypt(content_b64, derive_u(uuid_str))
 
+def generate_mock_plugin_code() -> str:
+    """
+    生成一个长度为 64 的小写十六进制字符串，
+    格式与 wx.pluginLogin 返回的 code 完全一致。
+    """
+    # secrets.token_hex(nbytes) 会生成 nbytes 个字节的十六进制文本。
+    # 32 字节 * 2 个字符/字节 = 64 个字符长度的字符串。
+    return secrets.token_hex(32)
 
 # 兼容旧调用名
 p2baeeec4 = s_encrypt
@@ -434,6 +443,9 @@ _LEGACY_STATE_FILE = os.path.abspath(
 )
 
 # 设备指纹字段 (与 JS DEV 表一致)
+FT_OFFSCREEN_CANVAS = ""
+X_WECHAT_HOSTSIGN = '{"noncestr":"4ae5161e64efcbdda224b07ca23663a0","timestamp":1785747847,"signature":"26c824abcb77bf02d72b1400e0e14de745d51e90"}'
+PLUGIN_CODE = "67eca4cd50a21b0315316454607e470f6c249c81d073a60ef8d63f2c30c2e6d5"
 _DEV = {
     "4": "linux", "43": "wifi",
     "101": cfg.OPENID,
@@ -445,10 +457,8 @@ _DEV = {
     "116": "20", "117": "-1", "118": "1:1:1:1:1:0:1:1",
     "119": "", "121": "", "122": "", "123": "", "124": "false",
     "126": "15", "127": "20260715", "128": "2.0.0.1", "129": "release",
-    "130": "67eca4cd50a21b0315316454607e470f6c249c81d073a60ef8d63f2c30c2e6d5",
+    "130": PLUGIN_CODE or generate_mock_plugin_code(),
 }
-FT_OFFSCREEN_CANVAS = ""
-X_WECHAT_HOSTSIGN = ""
 
 def _load_state():
     """读取状态文件; 若 cache 里没有但旧位置有, 自动迁移过来。"""
