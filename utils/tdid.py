@@ -24,6 +24,7 @@ import threading
 import uuid as _uuid
 import http.client
 import cycronet
+import secrets
 
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -55,12 +56,6 @@ def _print_set_cookie(resp, tag=""):
             _log("%sSet-Cookie: %s" % (("[%s] " % tag) if tag else "", sc))
     except Exception as e:
         _log("打印 Set-Cookie 异常: %s" % e)
-
-
-
-host_sign = ""
-
-
 
 # ============================================================================
 #  Base64 (标准表 A-Za-z0-9+/=)
@@ -419,6 +414,14 @@ def decrypt_content_by_uuid(content_b64, uuid_str):
     """已知设备 uuid, 解密 content (先 derive_u 再解)"""
     return s_decrypt(content_b64, derive_u(uuid_str))
 
+def generate_mock_plugin_code() -> str:
+    """
+    生成一个长度为 64 的小写十六进制字符串，
+    格式与 wx.pluginLogin 返回的 code 完全一致。
+    """
+    # secrets.token_hex(nbytes) 会生成 nbytes 个字节的十六进制文本。
+    # 32 字节 * 2 个字符/字节 = 64 个字符长度的字符串。
+    return secrets.token_hex(32)
 
 # 兼容旧调用名
 p2baeeec4 = s_encrypt
@@ -440,20 +443,28 @@ _LEGACY_STATE_FILE = os.path.abspath(
 )
 
 # 设备指纹字段 (与 JS DEV 表一致)
-_DEV = {
-    "4": "windows", "43": "wifi",
-    "101": cfg.OPENID,
-    "103": "3.17.0",
-    "104": "microsoft", "105": "microsoft",
-    "106": "780*414", "107": "Windows Unknown x64", "108": "zh_CN",
-    "109": "", "110": "", "111": "4.1.11.55",
-    "112": "", "113": "", "114": "", "115": "",
-    "116": "20", "117": "-1", "118": "1:1:1:1:1:0:1:1",
-    "119": "", "121": "", "122": "", "123": "", "124": "false",
-    "126": "15", "127": "20260715", "128": "198.18.0.1", "129": "release",
-    "130": "9a197ec12f15436ff70609d5ac73282165ae37649f5049db61392350706393d8",
-}
-_FT_OFFSCREEN_CANVAS = ""
+FT_OFFSCREEN_CANVAS = ""
+X_WECHAT_HOSTSIGN = '{"noncestr":"4ae5161e64efcbdda224b07ca23663a0","timestamp":1785747847,"signature":"26c824abcb77bf02d72b1400e0e14de745d51e90"}'
+PLUGIN_CODE = "67eca4cd50a21b0315316454607e470f6c249c81d073a60ef8d63f2c30c2e6d5"
+
+
+def _build_dev():
+    """
+    根据 config.ENV 选择 linux / windows 两套设备指纹,
+    并动态填充 101(OPENID) 与 130(pluginCode)。
+    """
+    dev = cfg.get_device_profile()
+    dev["101"] = cfg.OPENID
+    # windows 环境保留其内置 130 (真实 pluginCode); linux 环境用抓包值或随机 mock
+    if not dev.get("130"):
+        dev["130"] = PLUGIN_CODE or generate_mock_plugin_code()
+    print(dev)
+    return dev
+
+
+# 当前运行环境 (linux / windows), 由 config.ENV 统一控制
+ENV = cfg.ENV
+_DEV = _build_dev()
 
 
 def _load_state():
@@ -537,7 +548,7 @@ def _build_business_obj(uuid_str, timestamp, ticket_id, typ):
             "126": _DEV["126"], "127": _DEV["127"], "128": _DEV["128"],
             "129": _DEV["129"], "130": _DEV["130"],
             "1000": "", "1001": "", "1002": "", "1003": "",
-            "1006": _make_device1006(_FT_OFFSCREEN_CANVAS, "", inner_ts + 5),
+            "1006": _make_device1006(FT_OFFSCREEN_CANVAS, "", inner_ts + 5),
             "1007": "",
             "4001": "", "4002": "", "4003": "", "4004": "",
         }
@@ -593,12 +604,36 @@ def _build_request_body(uuid_str, current_risk_token, ticket_id):
     return body, biz_obj
 
 
-def _build_host_sign():
+def _build_host_sign(noncestr=None, timestamp=None):
+    """
+    还原微信小程序 "插件请求签名" X-WECHAT-HOSTSIGN (见官方文档)。
+
+    请求头形如:
+        X-WECHAT-HOSTSIGN: {"noncestr":"NONCESTR","timestamp":"TIMESTAMP","signature":"SIGNATURE"}
+
+    其中:
+        - NONCESTR : 随机字符串
+        - TIMESTAMP: 生成 NONCESTR 与 SIGNATURE 的 UNIX 秒级时间戳
+        - APPID    : 所在小程序的 AppId (cfg.PLUGIN_APPID)
+        - TOKEN    : 插件 Token, 在小程序插件基本设置中获取 (cfg.PLUGIN_TOKEN)
+
+    签名算法:
+        SIGNATURE = sha1([APPID, NONCESTR, TIMESTAMP, TOKEN].sort().join(''))
+      即: 对四个字符串按字典序 (JS Array.prototype.sort 默认) 排序后直接拼接, 再取 sha1。
+    """
     import hashlib
-    noncestr = os.urandom(16).hex()
-    timestamp = int(time.time())
-    signature = hashlib.sha1((noncestr + str(timestamp)).encode("utf-8")).hexdigest()
-    return json.dumps({"noncestr": noncestr, "timestamp": timestamp, "signature": signature})
+    noncestr = noncestr or os.urandom(16).hex()
+    timestamp = timestamp or int(time.time())
+    appid = cfg.PLUGIN_APPID
+    token = cfg.PLUGIN_TOKEN
+    # JS 数组默认 sort(): 元素转字符串后按 Unicode 码点逐字符比较 (字典序)
+    parts = sorted([str(appid), str(noncestr), str(timestamp), str(token)])
+    signature = hashlib.sha1("".join(parts).encode("utf-8")).hexdigest()
+    return json.dumps(
+        {"noncestr": noncestr, "timestamp": timestamp, "signature": signature},
+        separators=(",", ":"),
+    )
+
 
 
 def event_report(session: cycronet.CronetClient, biz_obj: dict, uuid_str: str, host_sign_str: str = None):
@@ -725,7 +760,7 @@ def _extract_resp(res):
 
 
 def get_device_token(session: cycronet.CronetClient = None) -> dict:
-    global host_sign
+    global X_WECHAT_HOSTSIGN
     """
     纯 Python 两阶段获取 deviceToken (placeOrder 的 deviceToken)。
     返回 dict: {ok, deviceToken, ret, ...} 与 JS 版一致。
@@ -737,7 +772,7 @@ def get_device_token(session: cycronet.CronetClient = None) -> dict:
         state["uuid"] = _generate_uuid()
         _save_state(state)
     uuid_str = state["uuid"]
-    host_sign = _build_host_sign()
+    host_sign = X_WECHAT_HOSTSIGN or _build_host_sign()
 
     # 阶段一: 本地无 riskToken 时首包补全
     if not state["riskToken"]:
@@ -834,6 +869,11 @@ def _demo():
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "--demo":
         _demo()
+    elif len(sys.argv) > 1 and sys.argv[1] == "--sign":
+        noncestr = "6a01a3beb6d4e2f96778f32c858bee46"
+        timestamp = 1785898531
+        X_WECHAT_HOSTSIGN = _build_host_sign(noncestr, timestamp)
+        print("X-WECHAT-HOSTSIGN =", X_WECHAT_HOSTSIGN)
     else:
         r = get_device_token()
         print(json.dumps(r, ensure_ascii=False))

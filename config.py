@@ -25,12 +25,65 @@ ORDER_INFO_BY_STATUS_URL = "https://wxmini.chnmuseum.cn/prod-api/order/OrderInfo
 CHECKTIME_URL = "https://vv.video.qq.com/checktime?otype=json"
 
 
+# ============================ 运行环境切换 ============================
+# ENV 取值: "linux" 或 "windows"。用于统一切换 User-Agent 与设备指纹 (tdid._DEV)。
+# 可通过环境变量 MUSEUM_ENV 覆盖 (export MUSEUM_ENV=windows)。
+ENV = os.environ.get("MUSEUM_ENV", "linux").strip().lower()
+if ENV not in ("linux", "windows"):
+    ENV = "windows"
+
+
 # ============================ User-Agent ============================
-UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
-       "Chrome/132.0.0.0 Safari/537.36 MicroMessenger/7.0.20.1781(0x6700143B) NetType/WIFI "
-       "MiniProgramEnv/Windows WindowsWechat/WMPF WindowsWechat(0x63090a13) "
-       "UnifiedPCWindowsWechat(0xf2541721) XWEB/19027")
+# 两套 User-Agent, 按 ENV 选择
+_UA_LINUX = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36 MicroMessenger/7.0.20.1781(0x6700143B) NetType/WIFI MiniProgramEnv/Windows WindowsWechat/WMPF WindowsWechat(0x63090a13) UnifiedPCLinuxWechat(0xf2741104) XWEB/14910"
+_UA_WINDOWS = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/132.0.0.0 Safari/537.36 MicroMessenger/7.0.20.1781(0x6700143B) NetType/WIFI "
+    "MiniProgramEnv/Windows WindowsWechat/WMPF WindowsWechat(0x63090a13) "
+    "UnifiedPCWindowsWechat(0xf2541721) XWEB/19027"
+)
+UA = _UA_WINDOWS if ENV == "windows" else _UA_LINUX
+
+
+# ============================ 设备指纹 (tdid._DEV) ============================
+# 两套设备信息, 按 ENV 选择。101(OPENID) 与 130(pluginCode) 在 tdid.py 内动态填充,
+# 这里放占位, 由 tdid.py 覆写。
+_DEV_LINUX = {
+    "4": "linux", "43": "wifi",
+    "101": "",
+    "103": "3.8.10",
+    "104": "linux", "105": "linux",
+    "106": "798*412", "107": "Linux 6.8.0-136-generic x86_64", "108": "zh_CN",
+    "109": "", "110": "", "111": "4.1.1.4",
+    "112": "", "113": "", "114": "", "115": "",
+    "116": "20", "117": "-1", "118": "1:1:1:1:1:0:1:1",
+    "119": "", "121": "", "122": "", "123": "", "124": "false",
+    "126": "15", "127": "20260715", "128": "2.0.0.1", "129": "release",
+    "130": "",
+}
+_DEV_WINDOWS = {
+    "4": "windows", "43": "wifi",
+    "101": "",
+    "103": "3.17.0",
+    "104": "microsoft", "105": "microsoft",
+    "106": "780*414", "107": "Windows Unknown x64", "108": "zh_CN",
+    "109": "", "110": "", "111": "4.1.11.55",
+    "112": "", "113": "", "114": "", "115": "",
+    "116": "20", "117": "-1", "118": "1:1:1:1:1:0:1:1",
+    "119": "", "121": "", "122": "", "123": "", "124": "false",
+    "126": "15", "127": "20260715", "128": "198.18.0.1", "129": "release",
+    "130": "",
+}
+
+
+def get_device_profile():
+    """返回当前 ENV 对应的设备指纹字典副本 (101/130 由 tdid.py 动态覆写)。"""
+    src = _DEV_WINDOWS if ENV == "windows" else _DEV_LINUX
+    return dict(src)
+
+
 # ============================ 常量 ============================
+
 NONCE_KEY = "AyrKJRXPO3nR5Abc"   # getBlock nonce 的 AES key (源码固定)
 # Host-Ip 加密 key: 非扫码(secretkey 为空)用 AyrKJRXPO3nR5Abc, 扫码用 mjnkHYmu0jpURBTQ
 HOST_IP_KEY = "AyrKJRXPO3nR5Abc"
@@ -38,14 +91,21 @@ HOST_IP_KEY_SCAN = "mjnkHYmu0jpURBTQ"
 POINT_OFFSET = 10                 # 点选坐标 -10 偏移 (Verify 组件 bindingClick)
 PLATFORM = 2                      # 非扫码
 
+# ---- 插件请求签名 (X-WECHAT-HOSTSIGN) 相关 ----
+# APPID: 所在小程序的 AppId (可从请求头 referer 中获得)
+PLUGIN_APPID = "wx9e2927dd595b0473"
+# TOKEN: 插件 Token, 可在小程序插件基本设置中找到
+PLUGIN_TOKEN = ""
+
+
 
 # ---- 登录信息, 请按需替换为自己的有效 token、miniOpenId、unionId ----
-API_TOKEN = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJsb2dpbl91c2VyX25hbWUiOiJ3YW5lcuWpieWEvyIsImxvZ2luX2V4cGlyZWRfdGltZSI6MTc4NDI1NDg2MjUwMywibG9naW5fdXNlcl9pZCI6MzYwOTA0NTUsImxvZ2luX3VzZXJfa2V5IjoiMzYwOTA0NTU6MmVhMGNhN2QtYzM4ZC00ODBmLTg0YjktMTNmNDk3YTE2NmZjIiwibG9naW5fdXNlcl9hY2NvdW50IjoiMTM1NDYyOTI2NjcifQ.FcLJdyQtFNHXk8ToFQfpYrmHc6P3zuTS43B2Fo55aSw"
-OPENID = "osPfN4tVY151_cgjmptwzCGJMQTW"
-UNIONID = "oBJkKwKyqGnyxcgYcUAGFqTRdArs"
-# ---- 下单实名信息 (与抓包一致, 可按需替换) ----
-ORDER_USER_NAME = "任冬冬"
-ORDER_CERT_INFO = "411326198812112424"
+API_TOKEN = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJsb2dpbl91c2VyX25hbWUiOiLlpKnnqbrvvIjpobrlir_pmo_nvJjvvIkiLCJsb2dpbl9leHBpcmVkX3RpbWUiOjE3ODQyNTQ3Mjk4MzIsImxvZ2luX3VzZXJfaWQiOjM2MDkwMzU5LCJsb2dpbl91c2VyX2tleSI6IjM2MDkwMzU5OmU0YmI0NjMwLWVmZTktNDYxZC1hNWU2LWYxZjgyOWZiZmRiZCIsImxvZ2luX3VzZXJfYWNjb3VudCI6IjEzOTM1ODMxMjkxIn0.2xwIuOnp2GrilODk_1Dk4MHe06bx7sax3O_dzJ7Aeq4"
+OPENID = "osPfN4KloruyBEHLORUY148_cfjm"
+UNIONID = "oBJkKwO4Na-1_IrDi0TljIeKGnuY"
+# ---- 下单实名信息 留空则自动回填 ----
+ORDER_USER_NAME = ""
+ORDER_CERT_INFO = ""
 
 # ---- 用户 userId (nonce 明文需要); 留空则由 checkToken 成功后自动回填 ----
 USER_ID = ""
