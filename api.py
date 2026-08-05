@@ -449,7 +449,7 @@ def scan_for_ticket(session):
         try:
             # 每次拉取 ALL_CONFIG 前先做风控前置校验 (code = deviceToken)
             front_page(session)
-            time.sleep(random.uniform(1.0, 2.0))
+            # time.sleep(random.uniform(1.0, 2.0))
             resp = session.get(cfg.ALL_CONFIG_URL, headers=cfg.build_headers(), timeout=5)
 
             if resp.status_code != 200:

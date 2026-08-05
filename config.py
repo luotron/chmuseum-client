@@ -30,7 +30,7 @@ CHECKTIME_URL = "https://vv.video.qq.com/checktime?otype=json"
 # 可通过环境变量 MUSEUM_ENV 覆盖 (export MUSEUM_ENV=windows)。
 ENV = os.environ.get("MUSEUM_ENV", "linux").strip().lower()
 if ENV not in ("linux", "windows"):
-    ENV = "windows"
+    ENV = "linux"
 
 
 # ============================ User-Agent ============================
@@ -100,9 +100,9 @@ PLUGIN_TOKEN = ""
 
 
 # ---- 登录信息, 请按需替换为自己的有效 token、miniOpenId、unionId ----
-API_TOKEN = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJsb2dpbl91c2VyX25hbWUiOiLlpKnnqbrvvIjpobrlir_pmo_nvJjvvIkiLCJsb2dpbl9leHBpcmVkX3RpbWUiOjE3ODQyNTQ3Mjk4MzIsImxvZ2luX3VzZXJfaWQiOjM2MDkwMzU5LCJsb2dpbl91c2VyX2tleSI6IjM2MDkwMzU5OmU0YmI0NjMwLWVmZTktNDYxZC1hNWU2LWYxZjgyOWZiZmRiZCIsImxvZ2luX3VzZXJfYWNjb3VudCI6IjEzOTM1ODMxMjkxIn0.2xwIuOnp2GrilODk_1Dk4MHe06bx7sax3O_dzJ7Aeq4"
-OPENID = "osPfN4KloruyBEHLORUY148_cfjm"
-UNIONID = "oBJkKwO4Na-1_IrDi0TljIeKGnuY"
+API_TOKEN = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJsb2dpbl91c2VyX25hbWUiOiLkuIfkuovpobrlv4MxODAzNTg2MzY4MyIsImxvZ2luX2V4cGlyZWRfdGltZSI6MTc4NDI1MzM4NTg1MiwibG9naW5fdXNlcl9pZCI6MzYwODk2MDYsImxvZ2luX3VzZXJfa2V5IjoiMzYwODk2MDY6OWQyMzE5YzctZjYwZi00YTQzLWJjMGEtNzE1ZWNhZjZjNzIzIiwibG9naW5fdXNlcl9hY2NvdW50IjoiMTgwMzU4NjM2ODMifQ.6cRiByVMyEgisdl9It-DNjWRKovSXtNG9Yq2fVSnOas"
+OPENID = "osPfN4d-behloruyBEHLORUY148_"
+UNIONID = "oBJkKwOHkTQaG_puA8-WpRRtOpUs"
 # ---- 下单实名信息 留空则自动回填 ----
 ORDER_USER_NAME = ""
 ORDER_CERT_INFO = ""

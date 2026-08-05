@@ -23,6 +23,7 @@ import sys
 import random
 import time
 import json
+from datetime import datetime
 
 # ------------------ 屏蔽 Native 层的 GLib 警告 (仅 posix) ------------------
 def _suppress_native_stderr():
@@ -128,6 +129,7 @@ def main():
         if resp.get("code") != 200 or not resp.get("data"):
             raise RuntimeError(json.dumps(resp, ensure_ascii=False)[:200])
         block = resp["data"]
+        api._save_captcha_images(block)  # 保存验证码图 + 提示图
         log("getBlock 成功: docType=%s secretKey=%s captchaToken=%s"
                 % (block.get("docType"), block.get("secretKey"), block.get("token")))
     except Exception as e:
@@ -150,7 +152,6 @@ def main():
                 jigsaw_image_base64=jigsaw_image_base64,
                 secret_key=secret_key
             )
-            
             if result:
                 x, y = result
                 log(f"识别成功: 中心点坐标 ({x}, {y})")
@@ -184,7 +185,7 @@ def main():
         log("⚠ 未获得 deviceToken, 仍尝试下单 (可能被风控拒绝)。")
         device_token = ""
 
-    time.sleep(random.uniform(2, 3))
+    time.sleep(random.uniform(0.5, 1))
     resp = api.place_order(session, ctx, point_json_cipher, captcha_token, device_token)
     if resp.get("code") == 200 and resp.get("data"):
         d = resp["data"]

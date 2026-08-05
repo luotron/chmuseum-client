@@ -444,8 +444,8 @@ _LEGACY_STATE_FILE = os.path.abspath(
 
 # 设备指纹字段 (与 JS DEV 表一致)
 FT_OFFSCREEN_CANVAS = ""
-X_WECHAT_HOSTSIGN = '{"noncestr":"4ae5161e64efcbdda224b07ca23663a0","timestamp":1785747847,"signature":"26c824abcb77bf02d72b1400e0e14de745d51e90"}'
-PLUGIN_CODE = "67eca4cd50a21b0315316454607e470f6c249c81d073a60ef8d63f2c30c2e6d5"
+X_WECHAT_HOSTSIGN = ''
+PLUGIN_CODE = ""
 
 
 def _build_dev():
@@ -458,7 +458,6 @@ def _build_dev():
     # windows 环境保留其内置 130 (真实 pluginCode); linux 环境用抓包值或随机 mock
     if not dev.get("130"):
         dev["130"] = PLUGIN_CODE or generate_mock_plugin_code()
-    print(dev)
     return dev
 
 
