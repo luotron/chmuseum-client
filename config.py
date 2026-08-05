@@ -25,9 +25,65 @@ ORDER_INFO_BY_STATUS_URL = "https://wxmini.chnmuseum.cn/prod-api/order/OrderInfo
 CHECKTIME_URL = "https://vv.video.qq.com/checktime?otype=json"
 
 
+# ============================ 运行环境切换 ============================
+# ENV 取值: "linux" 或 "windows"。用于统一切换 User-Agent 与设备指纹 (tdid._DEV)。
+# 可通过环境变量 MUSEUM_ENV 覆盖 (export MUSEUM_ENV=windows)。
+ENV = os.environ.get("MUSEUM_ENV", "linux").strip().lower()
+if ENV not in ("linux", "windows"):
+    ENV = "windows"
+
+
 # ============================ User-Agent ============================
-UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36 MicroMessenger/7.0.20.1781(0x6700143B) NetType/WIFI MiniProgramEnv/Windows WindowsWechat/WMPF WindowsWechat(0x63090a13) UnifiedPCLinuxWechat(0xf2741104) XWEB/14910"
+# 两套 User-Agent, 按 ENV 选择
+_UA_LINUX = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36 MicroMessenger/7.0.20.1781(0x6700143B) NetType/WIFI MiniProgramEnv/Windows WindowsWechat/WMPF WindowsWechat(0x63090a13) UnifiedPCLinuxWechat(0xf2741104) XWEB/14910"
+_UA_WINDOWS = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/132.0.0.0 Safari/537.36 MicroMessenger/7.0.20.1781(0x6700143B) NetType/WIFI "
+    "MiniProgramEnv/Windows WindowsWechat/WMPF WindowsWechat(0x63090a13) "
+    "UnifiedPCWindowsWechat(0xf2541721) XWEB/19027"
+)
+UA = _UA_WINDOWS if ENV == "windows" else _UA_LINUX
+
+
+# ============================ 设备指纹 (tdid._DEV) ============================
+# 两套设备信息, 按 ENV 选择。101(OPENID) 与 130(pluginCode) 在 tdid.py 内动态填充,
+# 这里放占位, 由 tdid.py 覆写。
+_DEV_LINUX = {
+    "4": "linux", "43": "wifi",
+    "101": "",
+    "103": "3.8.10",
+    "104": "linux", "105": "linux",
+    "106": "798*412", "107": "Linux 6.8.0-136-generic x86_64", "108": "zh_CN",
+    "109": "", "110": "", "111": "4.1.1.4",
+    "112": "", "113": "", "114": "", "115": "",
+    "116": "20", "117": "-1", "118": "1:1:1:1:1:0:1:1",
+    "119": "", "121": "", "122": "", "123": "", "124": "false",
+    "126": "15", "127": "20260715", "128": "2.0.0.1", "129": "release",
+    "130": "",
+}
+_DEV_WINDOWS = {
+    "4": "windows", "43": "wifi",
+    "101": "",
+    "103": "3.17.0",
+    "104": "microsoft", "105": "microsoft",
+    "106": "780*414", "107": "Windows Unknown x64", "108": "zh_CN",
+    "109": "", "110": "", "111": "4.1.11.55",
+    "112": "", "113": "", "114": "", "115": "",
+    "116": "20", "117": "-1", "118": "1:1:1:1:1:0:1:1",
+    "119": "", "121": "", "122": "", "123": "", "124": "false",
+    "126": "15", "127": "20260715", "128": "198.18.0.1", "129": "release",
+    "130": "",
+}
+
+
+def get_device_profile():
+    """返回当前 ENV 对应的设备指纹字典副本 (101/130 由 tdid.py 动态覆写)。"""
+    src = _DEV_WINDOWS if ENV == "windows" else _DEV_LINUX
+    return dict(src)
+
+
 # ============================ 常量 ============================
+
 NONCE_KEY = "AyrKJRXPO3nR5Abc"   # getBlock nonce 的 AES key (源码固定)
 # Host-Ip 加密 key: 非扫码(secretkey 为空)用 AyrKJRXPO3nR5Abc, 扫码用 mjnkHYmu0jpURBTQ
 HOST_IP_KEY = "AyrKJRXPO3nR5Abc"

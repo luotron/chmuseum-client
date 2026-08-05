@@ -446,19 +446,26 @@ _LEGACY_STATE_FILE = os.path.abspath(
 FT_OFFSCREEN_CANVAS = ""
 X_WECHAT_HOSTSIGN = '{"noncestr":"4ae5161e64efcbdda224b07ca23663a0","timestamp":1785747847,"signature":"26c824abcb77bf02d72b1400e0e14de745d51e90"}'
 PLUGIN_CODE = "67eca4cd50a21b0315316454607e470f6c249c81d073a60ef8d63f2c30c2e6d5"
-_DEV = {
-    "4": "linux", "43": "wifi",
-    "101": cfg.OPENID,
-    "103": "3.8.10",
-    "104": "linux", "105": "linux",
-    "106": "798*412", "107": "Linux 6.8.0-136-generic x86_64", "108": "zh_CN",
-    "109": "", "110": "", "111": "4.1.1.4",
-    "112": "", "113": "", "114": "", "115": "",
-    "116": "20", "117": "-1", "118": "1:1:1:1:1:0:1:1",
-    "119": "", "121": "", "122": "", "123": "", "124": "false",
-    "126": "15", "127": "20260715", "128": "2.0.0.1", "129": "release",
-    "130": PLUGIN_CODE or generate_mock_plugin_code(),
-}
+
+
+def _build_dev():
+    """
+    根据 config.ENV 选择 linux / windows 两套设备指纹,
+    并动态填充 101(OPENID) 与 130(pluginCode)。
+    """
+    dev = cfg.get_device_profile()
+    dev["101"] = cfg.OPENID
+    # windows 环境保留其内置 130 (真实 pluginCode); linux 环境用抓包值或随机 mock
+    if not dev.get("130"):
+        dev["130"] = PLUGIN_CODE or generate_mock_plugin_code()
+    print(dev)
+    return dev
+
+
+# 当前运行环境 (linux / windows), 由 config.ENV 统一控制
+ENV = cfg.ENV
+_DEV = _build_dev()
+
 
 def _load_state():
     """读取状态文件; 若 cache 里没有但旧位置有, 自动迁移过来。"""
