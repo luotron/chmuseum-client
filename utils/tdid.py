@@ -621,23 +621,24 @@ def _make_device1(uuid_str, inner_ts):
     return s_encrypt(uuid_str, PB89649DE, True, inner_ts)
 
 
-def _make_device1006(canvas_plain, salt, inner_ts):
+def _make_device1006(canvas_plain, salt, ts):
     """
     由 canvas 原始特征 (dataURL) 生成 deviceObj["1006"], 完整还原
     app-service.js 行 19936-19940 的处理链:
 
         r   = hash32(canvas_dataURL, seed=256)          # MurmurHash2, 不可逆
         key = hash32(salt + "1006", seed=256)           # 派生 XXTEA 密钥
-        1006 = base64( XXTEA( str(r) + "_" + 毫秒时间戳, str(key) ) )
+        1006 = base64( XXTEA( str(r) + "_" + ts, str(key) ) )
 
-    其中 salt = deviceObj["2"] || deviceObj["1"] (见行 19994 s = e[2]||e[1])。
+    经真机抓包解密验证: salt = 设备 uuid 明文, ts = 外层请求 timestamp
+    (解出的 1006 明文形如 "212073351_1785660553620")。
     canvas_plain 为空时返回 "" (与 SDK 采集失败时 t[1006]="" 行为一致)。
     """
     if not canvas_plain:
         return ""
     r = hash32(canvas_plain, 256)                 # ① 原始特征 -> 32 位哈希
-    key = hash32((salt or "") + "1006", 256)      # ② 派生密钥
-    return s_encrypt(str(r), str(key), True, inner_ts)  # ③ XXTEA + Base64 (带时间戳)
+    key = hash32((salt or "") + "1006", 256)      # ② 派生密钥 (salt = uuid)
+    return s_encrypt(str(r), str(key), True, ts)  # ③ XXTEA + Base64 (带时间戳 ts)
 
 
 def _build_business_obj(uuid_str, timestamp, ticket_id, typ):
@@ -650,13 +651,12 @@ def _build_business_obj(uuid_str, timestamp, ticket_id, typ):
     flags = 2 if typ == 0 else 0
 
     # --- 计算 deviceObj["1006"] 所需的两个输入 ---
-    # 1) salt: 与 JS 一致 = deviceObj["2"] || deviceObj["1"] (行 19994 s = e[2]||e[1])
-    salt_1006 = (ticket_id or "") or device1
+    # 1) salt: 经真机抓包验证 = 设备 uuid 明文 (密钥 = hash32(uuid + "1006", 256));
+    #    时间戳用外层 timestamp (与真机 1006 明文尾部时间戳一致)。
     # 2) canvas 原始特征: 按设备 uuid 确定性伪造 (同一 uuid 稳定, 不同 uuid 不同),
     #    无需手动输入; 详见 generate_mock_canvas_fingerprint。
     canvas_raw = generate_mock_canvas_fingerprint(uuid_str)
-    device1006 = _make_device1006(canvas_raw, salt_1006, inner_ts + 5)
-
+    device1006 = _make_device1006(canvas_raw, uuid_str, timestamp)
     # deviceObj["130"] = wx.pluginLogin code, 每次构建都取最新 (见 get_plugin_code)
     plugin_code = os.environ.get("TDID_PLUGIN_CODE", "") or generate_mock_plugin_code()
 
@@ -674,7 +674,7 @@ def _build_business_obj(uuid_str, timestamp, ticket_id, typ):
             "126": _DEV["126"], "127": _DEV["127"], "128": _DEV["128"],
             "129": _DEV["129"], "130": plugin_code,
             "1000": "", "1001": "", "1002": "", "1003": "",
-            "1006": "",
+            "1006": device1006,
             "1007": "",
             "4001": "", "4002": "", "4003": "", "4004": "",
         }
