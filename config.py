@@ -26,10 +26,7 @@ CHECKTIME_URL = "https://vv.video.qq.com/checktime?otype=json"
 
 
 # ============================ User-Agent ============================
-UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
-       "Chrome/132.0.0.0 Safari/537.36 MicroMessenger/7.0.20.1781(0x6700143B) NetType/WIFI "
-       "MiniProgramEnv/Windows WindowsWechat/WMPF WindowsWechat(0x63090a13) "
-       "UnifiedPCWindowsWechat(0xf2541721) XWEB/19027")
+UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36 MicroMessenger/7.0.20.1781(0x6700143B) NetType/WIFI MiniProgramEnv/Windows WindowsWechat/WMPF WindowsWechat(0x63090a13) UnifiedPCLinuxWechat(0xf2741104) XWEB/14910"
 # ============================ 常量 ============================
 NONCE_KEY = "AyrKJRXPO3nR5Abc"   # getBlock nonce 的 AES key (源码固定)
 # Host-Ip 加密 key: 非扫码(secretkey 为空)用 AyrKJRXPO3nR5Abc, 扫码用 mjnkHYmu0jpURBTQ
@@ -37,6 +34,13 @@ HOST_IP_KEY = "AyrKJRXPO3nR5Abc"
 HOST_IP_KEY_SCAN = "mjnkHYmu0jpURBTQ"
 POINT_OFFSET = 10                 # 点选坐标 -10 偏移 (Verify 组件 bindingClick)
 PLATFORM = 2                      # 非扫码
+
+# ---- 插件请求签名 (X-WECHAT-HOSTSIGN) 相关 ----
+# APPID: 所在小程序的 AppId (可从请求头 referer 中获得)
+PLUGIN_APPID = "wx9e2927dd595b0473"
+# TOKEN: 插件 Token, 可在小程序插件基本设置中找到
+PLUGIN_TOKEN = ""
+
 
 
 # ---- 登录信息, 请按需替换为自己的有效 token、miniOpenId、unionId ----

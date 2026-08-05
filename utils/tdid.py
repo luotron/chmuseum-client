@@ -56,12 +56,6 @@ def _print_set_cookie(resp, tag=""):
     except Exception as e:
         _log("打印 Set-Cookie 异常: %s" % e)
 
-
-
-host_sign = ""
-
-
-
 # ============================================================================
 #  Base64 (标准表 A-Za-z0-9+/=)
 # ============================================================================
@@ -453,8 +447,8 @@ _DEV = {
     "126": "15", "127": "20260715", "128": "2.0.0.1", "129": "release",
     "130": "67eca4cd50a21b0315316454607e470f6c249c81d073a60ef8d63f2c30c2e6d5",
 }
-_FT_OFFSCREEN_CANVAS = ""
-
+FT_OFFSCREEN_CANVAS = ""
+X_WECHAT_HOSTSIGN = ""
 
 def _load_state():
     """读取状态文件; 若 cache 里没有但旧位置有, 自动迁移过来。"""
@@ -537,7 +531,7 @@ def _build_business_obj(uuid_str, timestamp, ticket_id, typ):
             "126": _DEV["126"], "127": _DEV["127"], "128": _DEV["128"],
             "129": _DEV["129"], "130": _DEV["130"],
             "1000": "", "1001": "", "1002": "", "1003": "",
-            "1006": _make_device1006(_FT_OFFSCREEN_CANVAS, "", inner_ts + 5),
+            "1006": _make_device1006(FT_OFFSCREEN_CANVAS, "", inner_ts + 5),
             "1007": "",
             "4001": "", "4002": "", "4003": "", "4004": "",
         }
@@ -593,12 +587,36 @@ def _build_request_body(uuid_str, current_risk_token, ticket_id):
     return body, biz_obj
 
 
-def _build_host_sign():
+def _build_host_sign(noncestr=None, timestamp=None):
+    """
+    还原微信小程序 "插件请求签名" X-WECHAT-HOSTSIGN (见官方文档)。
+
+    请求头形如:
+        X-WECHAT-HOSTSIGN: {"noncestr":"NONCESTR","timestamp":"TIMESTAMP","signature":"SIGNATURE"}
+
+    其中:
+        - NONCESTR : 随机字符串
+        - TIMESTAMP: 生成 NONCESTR 与 SIGNATURE 的 UNIX 秒级时间戳
+        - APPID    : 所在小程序的 AppId (cfg.PLUGIN_APPID)
+        - TOKEN    : 插件 Token, 在小程序插件基本设置中获取 (cfg.PLUGIN_TOKEN)
+
+    签名算法:
+        SIGNATURE = sha1([APPID, NONCESTR, TIMESTAMP, TOKEN].sort().join(''))
+      即: 对四个字符串按字典序 (JS Array.prototype.sort 默认) 排序后直接拼接, 再取 sha1。
+    """
     import hashlib
-    noncestr = os.urandom(16).hex()
-    timestamp = int(time.time())
-    signature = hashlib.sha1((noncestr + str(timestamp)).encode("utf-8")).hexdigest()
-    return json.dumps({"noncestr": noncestr, "timestamp": timestamp, "signature": signature})
+    noncestr = noncestr or os.urandom(16).hex()
+    timestamp = timestamp or int(time.time())
+    appid = cfg.PLUGIN_APPID
+    token = cfg.PLUGIN_TOKEN
+    # JS 数组默认 sort(): 元素转字符串后按 Unicode 码点逐字符比较 (字典序)
+    parts = sorted([str(appid), str(noncestr), str(timestamp), str(token)])
+    signature = hashlib.sha1("".join(parts).encode("utf-8")).hexdigest()
+    return json.dumps(
+        {"noncestr": noncestr, "timestamp": timestamp, "signature": signature},
+        separators=(",", ":"),
+    )
+
 
 
 def event_report(session: cycronet.CronetClient, biz_obj: dict, uuid_str: str, host_sign_str: str = None):
@@ -725,7 +743,7 @@ def _extract_resp(res):
 
 
 def get_device_token(session: cycronet.CronetClient = None) -> dict:
-    global host_sign
+    global X_WECHAT_HOSTSIGN
     """
     纯 Python 两阶段获取 deviceToken (placeOrder 的 deviceToken)。
     返回 dict: {ok, deviceToken, ret, ...} 与 JS 版一致。
@@ -737,7 +755,7 @@ def get_device_token(session: cycronet.CronetClient = None) -> dict:
         state["uuid"] = _generate_uuid()
         _save_state(state)
     uuid_str = state["uuid"]
-    host_sign = _build_host_sign()
+    host_sign = X_WECHAT_HOSTSIGN or _build_host_sign()
 
     # 阶段一: 本地无 riskToken 时首包补全
     if not state["riskToken"]:
@@ -834,6 +852,11 @@ def _demo():
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "--demo":
         _demo()
+    elif len(sys.argv) > 1 and sys.argv[1] == "--sign":
+        noncestr = "6a01a3beb6d4e2f96778f32c858bee46"
+        timestamp = 1785898531
+        X_WECHAT_HOSTSIGN = _build_host_sign(noncestr, timestamp)
+        print("X-WECHAT-HOSTSIGN =", X_WECHAT_HOSTSIGN)
     else:
         r = get_device_token()
         print(json.dumps(r, ensure_ascii=False))
