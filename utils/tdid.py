@@ -454,22 +454,23 @@ _API_PATH = "https://browsertdidticket.m.qq.com/jprx/1941"
 _EVENT_REPORT_PATH = "https://gatherer.m.qq.com/event/report"
 
 # ============================================================================
-#  登录信息 + TDID 状态 合并落盘 (每账号一个文件 cache/login/{userId}.json)
+#  TDID 设备状态落盘 (复用统一登录文件 cache/login/{openid}.json)
 # ----------------------------------------------------------------------------
-#  设计:
-#    - 一个登录账号 (userId) 对应一个文件 cache/login/{userId}.json。
-#    - 文件把【登录信息】(apiToken/openid/unionid/userInfo) 与
-#      【TDID 设备状态】({uuid, riskToken, ticketID}) 绑定在一起。
-#    - 绑定时机: 某 userId 第一次调用 get_device_token 发出 type=0 请求成功时,
-#      即视为该账号完成设备绑定, 写入此文件 (boundAt 记录绑定时间)。
-#    - 后续该 userId 复用同一 uuid/riskToken/ticketID, 不再重新生成。
+#  设计 (与 config.py / login.py 统一体系对齐):
+#    - 账号主键统一为本地 accounts 的 openid (即 cfg.ACTIVE_OPENID; uin 可能为 null),
+#      与登录信息共用同一份文件 cache/login/{openid}.json, 不再另建 {userId}.json。
+#    - 本模块只负责维护该文件里的 tdidState 段 (uuid/riskToken/ticketID) 与
+#      可选的 login.userInfo, 绝不改动 login 的 apiToken/openid/unionId/userId,
+#      也不动 uin/nickname/sessionKey/registerFlag 等其它字段。
+#    - 绑定时机: 某账号第一次 type=0 请求成功时, 在 tdidState.boundAt 记录时间;
+#      后续复用同一 uuid/riskToken/ticketID, 不再重新生成。
 #
-#  文件结构示例:
+#  文件结构 (tdidState 段由本模块维护, 其余由 config/login 维护):
 #    {
-#      "userId": "36089606",
-#      "boundAt": "2026-...",   "savedAt": "2026-...",
-#      "login":  {"apiToken": "...", "openid": "...", "unionId": "...", "userInfo": {...}},
-#      "tdidState": {"uuid": "...", "riskToken": "...", "ticketID": "..."}
+#      "openid": "...", "uin": ..., "nickname": "...",
+#      "savedAt": "...", "sessionKey": "...", "registerFlag": "...",
+#      "login": {"apiToken","openid","unionId","userId","userInfo"},
+#      "tdidState": {"uuid","riskToken","ticketID","boundAt"}
 #    }
 # ============================================================================
 _CACHE_DIR = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "cache"))
@@ -479,17 +480,15 @@ _LOGIN_DIR = os.path.join(_CACHE_DIR, "login")
 _EMPTY_STATE = {"uuid": "", "riskToken": "", "ticketID": ""}
 
 
-def _current_user_id():
-    """当前登录账号 id (checkToken 成功后回填到 cfg.USER_ID)。取不到返回 ''。"""
+def _current_openid():
+    """
+    当前活跃账号主键 openid (由 config.load_login 设置到 cfg.ACTIVE_OPENID)。
+    取不到返回 ''; 设备状态即无法按账号持久化。
+    """
     try:
-        return str(cfg.USER_ID or "").strip()
+        return str(cfg.ACTIVE_OPENID or "").strip()
     except Exception:
         return ""
-
-
-def _user_login_file(user_id):
-    """账号登录信息文件路径 cache/login/{userId}.json。"""
-    return os.path.join(_LOGIN_DIR, "%s.json" % user_id)
 
 
 def _build_dev():
@@ -503,30 +502,28 @@ ENV = cfg.ENV
 _DEV = _build_dev()
 
 
-def _read_login_record(user_id):
-    """读取账号文件 cache/login/{userId}.json 的完整 JSON; 不存在/失败返回 None。"""
-    if not user_id:
+def _read_login_record(openid=None):
+    """读取账号文件 cache/login/{openid}.json 的完整 JSON; 不存在/失败返回 None。"""
+    if openid is None:
+        openid = _current_openid()
+    if not openid:
         return None
-    path = _user_login_file(user_id)
     try:
-        if os.path.exists(path):
-            with open(path, "r", encoding="utf-8") as f:
-                return json.load(f)
+        return cfg.read_login_record(openid)
     except Exception:
-        pass
-    return None
+        return None
 
 
-def _load_state(user_id=None):
+def _load_state(openid=None):
     """
-    读取指定账号的 TDID 设备状态 {uuid, riskToken, ticketID}。
-      - 已绑定: 读 cache/login/{userId}.json 的 tdidState;
-      - 未绑定 (账号文件不存在): 返回空模板, uuid 稍后由调用方生成,
-        待首次 type=0 成功再由 _save_login_record 正式绑定写入。
+    读取当前账号的 TDID 设备状态 {uuid, riskToken, ticketID}。
+      - 已绑定: 读 cache/login/{openid}.json 的 tdidState;
+      - 未绑定 (无 tdidState): 返回空模板, uuid 稍后由调用方生成,
+        待首次 type=0 成功再由 _save_state 写入。
     """
-    if user_id is None:
-        user_id = _current_user_id()
-    rec = _read_login_record(user_id)
+    if openid is None:
+        openid = _current_openid()
+    rec = _read_login_record(openid)
     if rec and isinstance(rec.get("tdidState"), dict):
         ts = rec["tdidState"]
         return {
@@ -537,72 +534,59 @@ def _load_state(user_id=None):
     return dict(_EMPTY_STATE)
 
 
-def _save_login_record(user_id, state, mark_bound=False, user_info=None):
+def _save_state(state, openid=None, mark_bound=False, user_info=None):
     """
-    把【登录信息】+【TDID 设备状态】合并写入 cache/login/{userId}.json。
+    把 TDID 设备状态合并写入 cache/login/{openid}.json 的 tdidState 段,
+    保留文件里其它所有字段 (login/uin/nickname/...) 不变。
       state      : {uuid, riskToken, ticketID}
-      mark_bound : True 表示这是首次绑定 (仅当文件里还没有 boundAt 时写入 boundAt)。
-      user_info  : 传入非空 dict 时写入 login.userInfo (get_user_info 时使用);
-                   None 则沿用文件里已有的 userInfo。
-    登录字段 (apiToken/openid/unionId) 取自 config, 将来由 SDK 获取后同样落这里。
+      mark_bound : True 表示首次绑定 (tdidState.boundAt 为空时写入当前时间)。
+      user_info  : 传入非空 dict 时更新 login.userInfo; None 则不动 userInfo。
+    无 openid (未 load_login) 时跳过落盘。
     """
-    if not user_id:
-        # 没有 userId (checkToken 未完成) -> 无法按账号绑定, 跳过落盘
-        _log("⚠️ 无 userId, 跳过账号绑定落盘 (设备状态本次不持久化)")
+    if openid is None:
+        openid = _current_openid()
+    if not openid:
+        _log("⚠️ 无 ACTIVE_OPENID, 跳过 TDID 状态落盘 (本次设备状态不持久化)")
         return
+    rec = _read_login_record(openid) or {}
     now = time.strftime("%Y-%m-%d %H:%M:%S")
-    old = _read_login_record(user_id) or {}
-    old_login = old.get("login", {}) or {}
-    record = {
-        "userId": str(user_id),
+    old_tdid = rec.get("tdidState") or {}
+    rec["tdidState"] = {
+        "uuid": state.get("uuid") or "",
+        "riskToken": state.get("riskToken") or "",
+        "ticketID": state.get("ticketID") or "",
         # 首次绑定写 boundAt; 已存在则保留原值
-        "boundAt": old.get("boundAt") or (now if mark_bound else ""),
-        "savedAt": now,
-        "login": {
-            # 全局登录信息: 现从 config 读取, 将来由 SDK 获取后同样写入这里
-            "apiToken": getattr(cfg, "API_TOKEN", "") or old_login.get("apiToken", ""),
-            "openid": getattr(cfg, "OPENID", "") or old_login.get("openid", ""),
-            "unionId": getattr(cfg, "UNIONID", "") or old_login.get("unionId", ""),
-            # userInfo: 本次传入了就更新, 否则沿用已存记录
-            "userInfo": user_info if user_info else (old_login.get("userInfo") or {}),
-        },
-        "tdidState": {
-            "uuid": state.get("uuid") or "",
-            "riskToken": state.get("riskToken") or "",
-            "ticketID": state.get("ticketID") or "",
-        },
+        "boundAt": old_tdid.get("boundAt") or (now if mark_bound else ""),
     }
+    # 可选更新 userInfo, 不触碰 login 的其它字段
+    if user_info:
+        login = rec.get("login") or {}
+        login["userInfo"] = user_info
+        rec["login"] = login
+    rec["savedAt"] = now
     try:
         os.makedirs(_LOGIN_DIR, exist_ok=True)
-        with open(_user_login_file(user_id), "w", encoding="utf-8") as f:
-            json.dump(record, f, ensure_ascii=False, indent=2)
+        with open(os.path.join(_LOGIN_DIR, "%s.json" % openid), "w", encoding="utf-8") as f:
+            json.dump(rec, f, ensure_ascii=False, indent=2)
     except Exception as e:
-        _log("❌ 保存账号登录信息失败(%s): %s" % (user_id, e))
+        _log("❌ 保存 TDID 状态失败(%s): %s" % (openid, e))
 
 
-def save_user_info(user_info, user_id=None):
+def save_user_info(user_info, openid=None):
     """
     get_user_info 成功后调用: 把用户信息写入账号文件 login.userInfo。
     只更新 userInfo, 不改动已绑定的 tdidState (读旧状态原样回写)。
-
-    user_id 优先取 user_info["userId"], 其次 cfg.USER_ID; 取不到则跳过。
+    openid 缺省用 cfg.ACTIVE_OPENID; 取不到则跳过。
     """
     if not isinstance(user_info, dict) or not user_info:
         return
-    if user_id is None:
-        user_id = str(user_info.get("userId") or "").strip() or _current_user_id()
-    if not user_id:
-        _log("⚠️ 无 userId, 跳过写入 userInfo")
+    if openid is None:
+        openid = _current_openid()
+    if not openid:
+        _log("⚠️ 无 ACTIVE_OPENID, 跳过写入 userInfo")
         return
-    state = _load_state(user_id)  # 保留已绑定的 uuid/riskToken/ticketID
-    _save_login_record(user_id, state, mark_bound=False, user_info=user_info)
-
-
-def _save_state(state, user_id=None):
-    """兼容旧接口: 保存设备状态到当前账号文件 (不标记为首次绑定)。"""
-    if user_id is None:
-        user_id = _current_user_id()
-    _save_login_record(user_id, state, mark_bound=False)
+    state = _load_state(openid)  # 保留已绑定的 uuid/riskToken/ticketID
+    _save_state(state, openid=openid, mark_bound=False, user_info=user_info)
 
 
 def _generate_uuid():
@@ -859,9 +843,9 @@ def get_device_token(session: cycronet.CronetClient = None) -> dict:
     """
     if session is None:
         session = cycronet.CronetClient(chrometls="chrome_133")
-    # 当前登录账号 (checkToken 后回填 cfg.USER_ID); 设备状态按账号读写
-    user_id = _current_user_id()
-    state = _load_state(user_id)
+    # 当前活跃账号主键 openid (load_login 后回填 cfg.ACTIVE_OPENID); 设备状态按账号读写
+    openid = _current_openid()
+    state = _load_state(openid)
     if not state["uuid"]:
         state["uuid"] = _generate_uuid()
         # 尚未绑定, 先不落盘 (等首次 type=0 成功再正式写入账号文件)
@@ -890,8 +874,8 @@ def get_device_token(session: cycronet.CronetClient = None) -> dict:
         if not state["ticketID"]:
             return {"ok": False, "ret": resp1.get("ret"),
                     "error": "stage1 rejected (no ticketID)"}
-        # ★ 该 userId 首次 type=0 成功 -> 视为账号绑定, 合并写入 cache/login/{userId}.json
-        _save_login_record(user_id, state, mark_bound=True)
+        # ★ 该账号首次 type=0 成功 -> 视为设备绑定, 写入 cache/login/{openid}.json 的 tdidState
+        _save_state(state, openid=openid, mark_bound=True)
         return {"ok": True, "deviceToken": resp1["msgBlock"], "ret": 0,
                 "overtime": resp1.get("overtime")}
 

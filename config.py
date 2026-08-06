@@ -5,8 +5,11 @@ config.py — 国博下单工具的全局配置与常量
 """
 
 import os
+import json
+import time
 import platform
 
+APP_ID = "wx9e2927dd595b0473"  # 小程序 AppId (Referer 中可见)
 # ============================ 接口 URL ============================
 CHECKTOKEN_URL = "https://uu.chnmuseum.cn/prod-api/api/checkToken"
 USER_INFO_URL = "https://uu.chnmuseum.cn/prod-api/getUserInfoToIndividual2Mini?p=wxmini"
@@ -24,6 +27,26 @@ FRONTPAGE_URL = "https://wxmini.chnmuseum.cn/prod-api/risk/frontPage"
 CONTACTER_LIST_URL = "https://wxmini.chnmuseum.cn/prod-api/basesetting/HallSetting/gainUserContacterList?p=wxmini"
 ORDER_INFO_BY_STATUS_URL = "https://wxmini.chnmuseum.cn/prod-api/order/OrderInfo/getOrderInfoByStatus?hallType=91&status=1&p=wxmini"
 CHECKTIME_URL = "https://vv.video.qq.com/checktime?otype=json"
+
+# ---- 小程序登录接口 (两段式登录) ----
+GET_WXMINI_SESSION_URL = "https://uu.chnmuseum.cn/prod-api/api/getWxminiSessioinInfo"
+MINIAPP_LOGIN_URL = "https://uu.chnmuseum.cn/prod-api/api/miniAppLogin"
+
+# ---- 本地应用宝协议服务 (提供 code / encryptedData / iv) ----
+LOCAL_BASE_URL = "http://127.0.0.1:8000"
+LOCAL_ACCOUNTS_URL = LOCAL_BASE_URL + "/accounts"
+LOCAL_HEALTH_URL = LOCAL_BASE_URL + "/health"
+LOCAL_GETCODE_URL = LOCAL_BASE_URL + "/wxapp/getCode"
+LOCAL_GETPHONE_URL = LOCAL_BASE_URL + "/wxapp/getPhoneNumber"
+# 运行时风控凭据: TDID_HOST_SIGN / TDID_PLUGIN_CODE 由这两个本地接口获取
+LOCAL_GETHOSTSIGN_URL = LOCAL_BASE_URL + "/wxapp/getHostSign"
+LOCAL_OPERATEWXDATA_URL = LOCAL_BASE_URL + "/wxapp/operateWxData"
+
+# ---- 风控固定参数 (getHostSign / operateWxData 的 payload) ----
+# 同盾 (TDID) 风控插件 appid, 用于 getHostSign 的 provider / plugin_id
+RISK_PLUGIN_PROVIDER = "wxc3b909c3d24c5417"
+RISK_PLUGIN_INNER_VERSION = 20
+
 
 
 # ============================ 运行环境切换 ============================
@@ -95,28 +118,119 @@ HOST_IP_KEY_SCAN = "mjnkHYmu0jpURBTQ"
 POINT_OFFSET = 10                 # 点选坐标 -10 偏移 (Verify 组件 bindingClick)
 PLATFORM = 2                      # 非扫码
 
-# ---- 插件请求签名 (X-WECHAT-HOSTSIGN) 相关 ----
-# APPID: 所在小程序的 AppId (可从请求头 referer 中获得)
-PLUGIN_APPID = "wx9e2927dd595b0473"
-# TOKEN: 插件 Token, 可在小程序插件基本设置中找到
-PLUGIN_TOKEN = ""
 
-
-
-# ---- 登录信息, 请按需替换为自己的有效 token、miniOpenId、unionId ----
-API_TOKEN = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJsb2dpbl91c2VyX25hbWUiOiLkuIfkuovpobrlv4MxODAzNTg2MzY4MyIsImxvZ2luX2V4cGlyZWRfdGltZSI6MTc4NDI1MzM4NTg1MiwibG9naW5fdXNlcl9pZCI6MzYwODk2MDYsImxvZ2luX3VzZXJfa2V5IjoiMzYwODk2MDY6OWQyMzE5YzctZjYwZi00YTQzLWJjMGEtNzE1ZWNhZjZjNzIzIiwibG9naW5fdXNlcl9hY2NvdW50IjoiMTgwMzU4NjM2ODMifQ.6cRiByVMyEgisdl9It-DNjWRKovSXtNG9Yq2fVSnOas"
-OPENID = "osPfN4d-behloruyBEHLORUY148_"
-UNIONID = "oBJkKwOHkTQaG_puA8-WpRRtOpUs"
-# ---- 下单实名信息 留空则自动回填 ----
+# ============================================================================
+#  登录态字段 (统一由 cache/login 管理, 不再硬编码)
+# ----------------------------------------------------------------------------
+#  以下均为「运行时内存变量」, 默认全空:
+#    - 由 config.load_login(uin) 从 cache/login/{uin}.json 加载回填;
+#    - 运行中被 api/tdid 回填 (USER_ID/实名) 后可由 config.save_login() 回写。
+# ============================================================================
+API_TOKEN = ""          # 登录 token (miniAppLogin 返回), build_headers 使用
+OPENID = ""             # 小程序 openid (getWxminiSessioinInfo 返回)
+UNIONID = ""            # 小程序 unionid
+USER_ID = ""            # 用户 userId (checkToken 回填, nonce 明文需要)
+# 下单实名信息: 仅内存变量 (isBind 回填 / placeOrder 使用), 不落盘到 cache/login
 ORDER_USER_NAME = ""
 ORDER_CERT_INFO = ""
-
-# ---- 用户 userId (nonce 明文需要); 留空则由 checkToken 成功后自动回填 ----
-USER_ID = ""
 
 
 # ---- 验证码图片落盘目录 (getBlock 时保存验证码图 + 提示图) ----
 CAPTCHA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cache", "captcha")
+
+# ---- 登录信息落盘目录 (按账号主键 openid: cache/login/{openid}.json) ----
+LOGIN_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cache", "login")
+
+# 当前活跃账号主键 openid (来自本地 accounts); 由 load_login() 设置, save_login() 使用
+ACTIVE_OPENID = ""
+
+
+# ============================================================================
+#  登录信息 加载 / 回写 (每账号一个文件 cache/login/{openid}.json)
+# ----------------------------------------------------------------------------
+#  主键: 本地应用宝协议服务 accounts 的 openid (uin 可能为 null, 不能作主键)。
+#  文件结构 (与 login.py 落盘一致):
+#    {
+#      "openid": ...,         # 账号主键 (accounts.openid), 也用于登录流程调本地接口
+#      "uin": ...,            # accounts.uin (可能为 null), 仅附带信息
+#      "nickname": ...,       # accounts.nickname
+#      "savedAt": ..., "sessionKey": ..., "registerFlag": ...,
+#      "login": { "apiToken", "openid", "unionId", "userId", "userInfo" }
+#    }
+# ============================================================================
+def _login_file(openid):
+    """账号登录信息文件路径 cache/login/{openid}.json。"""
+    return os.path.join(LOGIN_DIR, "%s.json" % openid)
+
+
+def login_exists(openid):
+    """指定 openid 是否已有登录信息文件。"""
+    return bool(openid) and os.path.exists(_login_file(openid))
+
+
+def read_login_record(openid):
+    """读取 cache/login/{openid}.json 完整 JSON; 不存在/失败返回 None。"""
+    if not openid:
+        return None
+    path = _login_file(openid)
+    try:
+        if os.path.exists(path):
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return None
+
+
+def _apply_login_to_globals(login):
+    """把 login 段回填到本模块运行时内存变量。"""
+    global API_TOKEN, OPENID, UNIONID, USER_ID
+    API_TOKEN = login.get("apiToken") or ""
+    OPENID = login.get("openid") or ""
+    UNIONID = login.get("unionId") or ""
+    USER_ID = str(login.get("userId") or "")
+
+
+def load_login(openid):
+    """
+    从 cache/login/{openid}.json 读取登录态并回填到本模块内存变量,
+    同时记录 ACTIVE_OPENID。返回 True 表示成功加载 (含 apiToken)。
+    """
+    global ACTIVE_OPENID
+    rec = read_login_record(openid)
+    if not rec:
+        return False
+    _apply_login_to_globals(rec.get("login") or {})
+    ACTIVE_OPENID = str(openid)
+    return bool(API_TOKEN)
+
+
+def save_login(openid=None):
+    """
+    把当前内存登录态回写到 cache/login/{openid}.json 的 login 段
+    (合并保留文件里已有的 openid/uin/nickname/sessionKey/registerFlag/userInfo)。
+    openid 缺省用 ACTIVE_OPENID。无 openid 时跳过。
+    """
+    key = str(openid or ACTIVE_OPENID)
+    if not key:
+        return
+    rec = read_login_record(key) or {}
+    old_login = rec.get("login") or {}
+    rec["openid"] = key
+    rec["savedAt"] = time.strftime("%Y-%m-%d %H:%M:%S")
+    rec["login"] = {
+        "apiToken": API_TOKEN or old_login.get("apiToken", ""),
+        "openid": OPENID or old_login.get("openid", ""),
+        "unionId": UNIONID or old_login.get("unionId", ""),
+        "userId": str(USER_ID or old_login.get("userId") or ""),
+        "userInfo": old_login.get("userInfo") or {},
+    }
+    try:
+        os.makedirs(LOGIN_DIR, exist_ok=True)
+        with open(_login_file(key), "w", encoding="utf-8") as f:
+            json.dump(rec, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print("[config] 保存登录信息失败(%s): %s" % (key, e))
 
 
 

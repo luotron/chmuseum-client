@@ -45,6 +45,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import cycronet
 
 import api as api
+import config as cfg
+import login as login_mod
 from utils.captcha import CaptchaPicker, build_point_json
 from utils.captcha_auto import auto_recognize_captcha
 from api import log
@@ -147,19 +149,105 @@ def manualOrder(session, ctx):
     else:
         log("placeOrder 返回: %s" % json.dumps(resp, ensure_ascii=False)[:300])
 
+def _select_account(accounts):
+    """
+    从账号列表里选择一个 (返回 acc dict)。
+      - 只有一个: 直接用;
+      - 多个: 终端交互式输入编号选择 (非法输入回退第 1 个)。
+    """
+    valid = [a for a in accounts if a.get("openid")]
+    if not valid:
+        return None
+    if len(valid) == 1:
+        return valid[0]
+    log("检测到多个账号, 请选择:")
+    for i, a in enumerate(valid, 1):
+        print("  %d. %s (%s)" % (i, a.get("nickname") or a.get("alias") or "", a.get("openid")))
+    try:
+        raw = input("请输入账号编号 (默认 1): ").strip()
+    except (EOFError, KeyboardInterrupt):
+        raw = ""
+    idx = 1
+    if raw:
+        try:
+            idx = int(raw)
+        except ValueError:
+            idx = 1
+    if idx < 1 or idx > len(valid):
+        log("编号非法, 使用第 1 个账号。")
+        idx = 1
+    return valid[idx - 1]
+
+
+def bootstrap_account(session):
+    """
+    运行前引导:
+      1. 校验本地应用宝协议服务是否启动;
+      2. 取 accounts, 确认有可用账号 (含 openid);
+      3. 选择一个账号;
+      4. 该账号 (按 openid) 在 cache/login 无登录信息 -> 执行登录流程;
+      5. 把该账号登录态加载到 config (回填 API_TOKEN/OPENID/UNIONID/... )。
+    返回选中账号的 openid (str); 任一步失败返回 None。
+    """
+    # 1) 本地服务
+    if not login_mod.check_local_service(session):
+        log("❌ 本地服务 (%s) 未启动, 退出。" % cfg.LOCAL_BASE_URL)
+        return None
+    log("本地服务已就绪。")
+
+    # 2) 取账号 (需含 openid 才可用; uin 可能为 null)
+    accounts = login_mod.get_accounts(session)
+    if not accounts:
+        log("❌ 未获取到任何账号, 退出。")
+        return None
+    valid = [a for a in accounts if a.get("openid")]
+    if not valid:
+        log("❌ 账号列表里没有可用账号 (需含 openid), 退出。")
+        return None
+    log("获取到 %d 个账号 (可用 %d 个)。" % (len(accounts), len(valid)))
+
+    # 3) 选账号
+    acc = _select_account(valid)
+    if not acc:
+        log("❌ 未选择到有效账号, 退出。")
+        return None
+    openid = acc.get("openid")
+    uin = acc.get("uin")           # 可能为 null, 仅附带
+    nickname = acc.get("nickname") or acc.get("alias") or ""
+    log("已选择账号: %s (openid=%s)" % (nickname, openid))
+
+    # 4) 无登录信息则登录 (按 openid 判断)
+    if cfg.login_exists(openid):
+        log("该账号已有登录信息, 直接加载。")
+    else:
+        log("该账号无登录信息, 开始登录流程 ...")
+        token = login_mod.login_account(session, openid, uin, nickname)
+        if not token:
+            log("❌ 账号 %s (openid=%s) 登录失败, 退出。" % (nickname, openid))
+            return None
+        log("✅ 账号 %s (openid=%s) 登录成功。" % (nickname, openid))
+
+    # 5) 加载登录态到 config
+    if not cfg.load_login(openid):
+        log("❌ 加载账号 openid=%s 登录信息失败 (缺少 apiToken), 退出。" % openid)
+        return None
+    log("登录态已加载: userId=%s openid=%s" % (cfg.USER_ID or "-", cfg.OPENID))
+    return openid
+
+
 def main():
     # 打印所有 cycronet 请求响应的 Set-Cookie (全局 patch, 只需一次)
-    # import config as cfg
     # cfg.install_cookie_logger()
     session = cycronet.CronetClient(chrometls="chrome_133")
 
+    # ★ 引导: 本地服务/账号/登录 -> 加载登录态到 config
+    openid = bootstrap_account(session)
+    if not openid:
+        return
+
     from utils.captcha_auto import CaptchaAutoRecognizer
     recognizer = CaptchaAutoRecognizer()
-    # 0) 先校验登录态 —— checkToken 返回 userInfo 才继续
-    check_info = api.check_token(session)
-    if not check_info:
-        log("❌ apiToken 无效或校验失败, 请更新 config.API_TOKEN 后重试。退出。")
-        return
+    # 0) 先校验登录态 —— getUserInfoToIndividual2Mini 返回 userInfo 才继续
     user_info = api.get_user_info(session)
     if not user_info:
         log("❌ 获取用户信息失败, 请检查网络或 API_TOKEN。退出。")
@@ -168,9 +256,14 @@ def main():
     if not bind_info:
         log("❌ 获取实名绑定信息失败, 请检查网络或 API_TOKEN。退出。")
         return
-    # 设置风控参数
-    os.environ['TDID_PLUGIN_CODE'] = '0f5f79aee9b174f340e8f6d3704a6e29b101ba2353ddde239e60e2a3c2b07974'
-    os.environ['TDID_HOST_SIGN'] = '{"noncestr":"02be882ced06c9b5aa04ebf6d54ceda4","timestamp":1785939102,"signature":"3fe337f24cee505e9573ce3cd540630f2b58658a"}'
+    # 把运行时回填的 userId 等持久化到 cache/login/{openid}.json
+    cfg.save_login(openid)
+    log("已持久化登录态到 cache/login (openid=%s userId=%s)" % (openid, cfg.USER_ID or "-"))
+    # 运行时通过本地应用宝服务获取风控参数 (TDID_HOST_SIGN / TDID_PLUGIN_CODE)
+    # openid 即账号主键, 直接用于调本地风控接口
+    if not login_mod.fetch_risk_params(session, openid):
+        log("❌ 获取风控参数失败, 退出。")
+        return
 
     # device_token = api.get_device_token(session)
     # if not device_token:

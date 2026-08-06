@@ -23,44 +23,6 @@ def log(msg):
     ts = datetime.now().strftime("%H:%M:%S")
     print("[%s] %s" % (ts, msg))
 
-# ============================================================================
-#  0. checkToken — 校验 apiToken 有效性, 返回 userInfo
-# ============================================================================
-def check_token(session):
-    """
-    调 checkToken 校验 API_TOKEN。成功 (code==200 且含 userInfo) 返回 userInfo dict,
-    否则返回 None。成功时把 userId 回填到 cfg.USER_ID, 并把登录信息落盘。
-    """
-    body = json.dumps({"apiToken": cfg.API_TOKEN, "p": "wxmini"},
-                      ensure_ascii=False).encode("utf-8")
-    try:
-        resp = session.post(cfg.CHECKTOKEN_URL, headers=cfg.build_headers(),
-                            data=body, timeout=8)
-    except Exception as e:
-        log("checkToken 请求异常: %s" % e)
-        return None
-
-    if resp.status_code != 200:
-        log("checkToken HTTP %s" % resp.status_code)
-        return None
-    try:
-        j = resp.json()
-    except Exception:
-        log("checkToken 响应非 JSON: %s" % resp.text[:200])
-        return None
-
-    if j.get("code") != 200 or not j.get("userInfo"):
-        log("checkToken 失败: %s" % json.dumps(j, ensure_ascii=False)[:200])
-        return None
-
-    user_info = j["userInfo"]
-    cfg.USER_ID = str(user_info.get("userId") or "")
-    # log("checkToken 成功: userId=%s userName=%s nickName=%s"
-    #     % (user_info.get("userId"), user_info.get("userName"),
-    #        user_info.get("nickName")))
-    return user_info
-
-
 def get_user_info(session):
     """
     GET /prod-api/getUserInfoToIndividual2Mini?p=wxmini
