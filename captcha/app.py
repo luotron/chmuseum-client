@@ -173,57 +173,86 @@ def decode_base64_image(b64: str) -> Image.Image:
     return Image.open(io.BytesIO(base64.b64decode(b64)))
 
 
+def _infer_target(jigsaw_img: Image.Image, original_img: Image.Image):
+    """
+    核心推理链 (进程内直接调用, 不经过 HTTP):
+      1. 小图检测 -> 取置信度最高的类别作为目标类别
+      2. 大图检测 -> 筛选同类别候选框
+      3. 返回置信度最高的检测框 dict (x1/y1/x2/y2/class_id/score); 识别失败返回 None
+    """
+    xiaotu_dets = xiaotu_model.detect(jigsaw_img)
+    if not xiaotu_dets:
+        return None
+    target_class = max(xiaotu_dets, key=lambda d: d["score"])["class_id"]
+
+    datu_dets = datu_model.detect(original_img)
+    candidates = [d for d in datu_dets if d["class_id"] == target_class]
+    if not candidates:
+        return None
+    return max(candidates, key=lambda d: d["score"])
+
+
+def predict_center_point(original_image_base64: str, jigsaw_image_base64: str):
+    """
+    直接推理 (不经过 HTTP 服务): 返回目标中心点 (x, y); 失败返回 None。
+    供 captcha_auto.py 进程内调用, 免去服务启动与网络通信开销。
+    """
+    try:
+        jigsaw_img = decode_base64_image(jigsaw_image_base64)
+        original_img = decode_base64_image(original_image_base64)
+    except Exception:
+        return None
+    best = _infer_target(jigsaw_img, original_img)
+    if not best:
+        return None
+    cx = (best["x1"] + best["x2"]) / 2.0
+    cy = (best["y1"] + best["y2"]) / 2.0
+    return (int(round(cx)), int(round(cy)))
+
+
+def predict_bounding_box(original_image_base64: str, jigsaw_image_base64: str):
+    """
+    直接推理 (不经过 HTTP 服务): 返回目标边界框 (x1, y1, x2, y2); 失败返回 None。
+    """
+    try:
+        jigsaw_img = decode_base64_image(jigsaw_image_base64)
+        original_img = decode_base64_image(original_image_base64)
+    except Exception:
+        return None
+    best = _infer_target(jigsaw_img, original_img)
+    if not best:
+        return None
+    return (
+        int(round(best["x1"])), int(round(best["y1"])),
+        int(round(best["x2"])), int(round(best["y2"])),
+    )
+
+
 @app.post("/CNM")
 async def cnm(req: CNMRequest):
     if req.mode not in (1, 2):
         return {"code": -1, "msg": "mode must be 1 or 2"}
 
-    try:
-        jigsaw_img = await asyncio.to_thread(decode_base64_image, req.data.jigsawImageBase64)
-        original_img = await asyncio.to_thread(decode_base64_image, req.data.originalImageBase64)
-    except Exception as e:
-        return {"code": -1, "secretKey": req.data.secretKey, "msg": f"image decode error: {e}"}
-
-    xiaotu_dets = await asyncio.to_thread(xiaotu_model.detect, jigsaw_img)
-    if not xiaotu_dets:
-        return {
-            "code": -1,
-            "secretKey": req.data.secretKey,
-            "msg": "no object detected in jigsaw image",
-        }
-
-    target_class = max(xiaotu_dets, key=lambda d: d["score"])["class_id"]
-
-    datu_dets = await asyncio.to_thread(datu_model.detect, original_img)
-    candidates = [d for d in datu_dets if d["class_id"] == target_class]
-    if not candidates:
-        return {
-            "code": -1,
-            "secretKey": req.data.secretKey,
-            "msg": "no matching object detected in original image",
-        }
-
-    best = max(candidates, key=lambda d: d["score"])
-
     if req.mode == 1:
-        cx = (best["x1"] + best["x2"]) / 2.0
-        cy = (best["y1"] + best["y2"]) / 2.0
-        return {
-            "code": 0,
-            "secretKey": req.data.secretKey,
-            "data": {"x": int(round(cx)), "y": int(round(cy))},
-        }
+        result = await asyncio.to_thread(
+            predict_center_point, req.data.originalImageBase64, req.data.jigsawImageBase64
+        )
+        if result is None:
+            return {"code": -1, "secretKey": req.data.secretKey,
+                    "msg": "no matching object detected"}
+        x, y = result
+        return {"code": 0, "secretKey": req.data.secretKey,
+                "data": {"x": x, "y": y}}
 
-    return {
-        "code": 0,
-        "secretKey": req.data.secretKey,
-        "data": {
-            "x1": int(round(best["x1"])),
-            "y1": int(round(best["y1"])),
-            "x2": int(round(best["x2"])),
-            "y2": int(round(best["y2"])),
-        },
-    }
+    result = await asyncio.to_thread(
+        predict_bounding_box, req.data.originalImageBase64, req.data.jigsawImageBase64
+    )
+    if result is None:
+        return {"code": -1, "secretKey": req.data.secretKey,
+                "msg": "no matching object detected"}
+    x1, y1, x2, y2 = result
+    return {"code": 0, "secretKey": req.data.secretKey,
+            "data": {"x1": x1, "y1": y1, "x2": x2, "y2": y2}}
 
 
 @app.get("/health")

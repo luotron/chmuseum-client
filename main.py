@@ -43,12 +43,71 @@ _suppress_native_stderr()
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import cycronet
-import argparse
 
 import api as api
 from utils.captcha import CaptchaPicker, build_point_json
 from utils.captcha_auto import auto_recognize_captcha
 from api import log
+
+# ==================== 查票间隔配置 ====================
+# 每次查询之间的间隔:
+#   0        = 无间隔, 第一次查完立即查第二次
+#   "1-2"    = 每次查询间隔随机 1~2 秒 (支持 "a-b" 区间写法)
+#   "3"      = 固定 3 秒
+SCAN_INTERVAL = "1-2"
+
+
+def _parse_scan_interval():
+    """把 SCAN_INTERVAL 解析为 (min_sec, max_sec); 0/空表示无间隔返回 None。"""
+    raw = str(SCAN_INTERVAL).strip()
+    if raw in ("", "0", "0.0"):
+        return None
+    if "-" in raw:
+        a, b = raw.split("-", 1)
+        try:
+            lo, hi = float(a), float(b)
+            return (lo, hi)
+        except ValueError:
+            pass
+    try:
+        v = float(raw)
+        return (v, v)
+    except ValueError:
+        return (1.0, 2.0)  # 非法配置回退默认 1~2 秒
+
+
+# ==================== 下单时限配置 ====================
+# 检测到余票并锁定后, 到提交订单的最大允许时长 (秒):
+#   0 = 越快越好, 锁定后不做任何等待, 立即提交
+#   N = 必须在 N 秒内提交订单, 锁定后所有等待自动缩短到剩余时间内
+TICKET_SUBMIT_DEADLINE = 5
+
+_submit_deadline_ts = None   # 锁定后的下单截止时刻 (monotonic 时钟); 0 模式为 None
+
+
+def _start_submit_deadline():
+    """发现余票锁定后立即调用: 记录下单截止时刻。"""
+    global _submit_deadline_ts
+    if TICKET_SUBMIT_DEADLINE > 0:
+        _submit_deadline_ts = time.monotonic() + TICKET_SUBMIT_DEADLINE
+        log("下单时限: %d 秒内必须提交订单" % TICKET_SUBMIT_DEADLINE)
+    else:
+        _submit_deadline_ts = None
+        log("下单时限: 0 (越快越好, 锁定后不做任何等待)")
+
+
+def _deadline_sleep(seconds):
+    """
+    受 TICKET_SUBMIT_DEADLINE 约束的等待:
+      - 0 模式 / 时限未开始 / 已超时: 不等待, 立即继续;
+      - 有限时限: 最多只等 seconds, 且不超过剩余时间。
+    """
+    if _submit_deadline_ts is None:
+        return
+    remaining = _submit_deadline_ts - time.monotonic()
+    if remaining <= 0:
+        return
+    time.sleep(min(seconds, remaining))
 
 def manualOrder(session, ctx):
     try:
@@ -113,17 +172,19 @@ def main():
     os.environ['TDID_PLUGIN_CODE'] = '0f5f79aee9b174f340e8f6d3704a6e29b101ba2353ddde239e60e2a3c2b07974'
     os.environ['TDID_HOST_SIGN'] = '{"noncestr":"02be882ced06c9b5aa04ebf6d54ceda4","timestamp":1785939102,"signature":"3fe337f24cee505e9573ce3cd540630f2b58658a"}'
 
-    device_token = api.get_device_token(session)
-    if not device_token:
-        log("⚠ 未获得 deviceToken, 仍尝试下单 (可能被风控拒绝)。")
-        device_token = ""
-        return
+    # device_token = api.get_device_token(session)
+    # if not device_token:
+    #     log("⚠ 未获得 deviceToken, 仍尝试下单 (可能被风控拒绝)。")
+    #     device_token = ""
+    #     return
     # 1) 扫描 + 锁定 (三者齐备立即停止扫描)
-    ctx = api.scan_for_ticket(session)
+    ctx = api.scan_for_ticket(session, interval=_parse_scan_interval(),
+                              submit_deadline=TICKET_SUBMIT_DEADLINE)
     if not ctx:
         return
+    _start_submit_deadline()  # 记录下单截止时刻 (受 TICKET_SUBMIT_DEADLINE 约束)
 
-    time.sleep(random.uniform(1.0, 2.0))
+    _deadline_sleep(random.uniform(1.0, 2.0))
     # 2) getBlock 验证码
     try:
         resp = api.get_block(session, ctx)
@@ -188,7 +249,7 @@ def main():
         log("⚠ 未获得 deviceToken, 仍尝试下单 (可能被风控拒绝)。")
         device_token = ""
 
-    time.sleep(random.uniform(0.5, 1))
+    _deadline_sleep(random.uniform(0.5, 1))  # 下单前等待受时限约束
     resp = api.place_order(session, ctx, point_json_cipher, captcha_token, device_token)
     if resp.get("code") == 200 and resp.get("data"):
         d = resp["data"]

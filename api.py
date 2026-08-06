@@ -407,31 +407,49 @@ def is_in_time_range():
     
     return start_time <= current_time <= end_time
 
-def scan_for_ticket(session):
+def _interval_sleep(interval):
+    """按查票间隔配置 sleep; interval=None 表示无间隔, 立即进入下一次查询。"""
+    if not interval:
+        return
+    lo, hi = interval
+    if hi <= lo:
+        time.sleep(lo)
+    else:
+        time.sleep(random.uniform(lo, hi))
+
+
+def scan_for_ticket(session, interval=None, submit_deadline=None):
     """
     轮询扫描余票。一旦发现某场次 ticketPool>0 且存在 priceId(余票>0),
     立即返回锁定的上下文 dict:
         { hallId, scheduleId, priceId, date, hallName, schedName, priceName }
-    否则持续轮询 (随机 1~2 秒间隔)。
+    否则持续轮询。interval 为 (min_sec, max_sec) 秒元组;
+    interval=None 表示无间隔 (第一次查完立即查第二次)。
+    submit_deadline: 锁定后到提交订单的时限 (秒):
+        0 = 越快越好, 锁定后不做任何等待; N = 锁定后等待不超过 N 秒;
+        None = 不启用 (保持默认 1~2 秒等待)。
     """
-    log("开始监听余票 (随机 1~2 秒间隔)... 按 Ctrl+C 退出")
+    if interval:
+        log("开始监听余票 (随机 %.1f~%.1f 秒间隔)... 按 Ctrl+C 退出"
+            % (interval[0], interval[1]))
+    else:
+        log("开始监听余票 (无间隔, 连续查询)... 按 Ctrl+C 退出")
     while True:
         now_str = datetime.now().strftime("%H:%M:%S")
         try:
             # 每次拉取 ALL_CONFIG 前先做风控前置校验 (code = deviceToken)
             front_page(session)
-            # time.sleep(random.uniform(1.0, 2.0))
             resp = session.get(cfg.ALL_CONFIG_URL, headers=cfg.build_headers(), timeout=5)
 
             if resp.status_code != 200:
                 log("HTTP %s, 稍后重试" % resp.status_code)
-                time.sleep(random.uniform(2.0, 5.0))
+                _interval_sleep(interval)
                 continue
 
             res_json = resp.json()
             if res_json.get("code") != 200:
                 log("接口 code=%s, 稍后重试" % res_json.get("code"))
-                time.sleep(random.uniform(2.0, 5.0))
+                _interval_sleep(interval)
                 continue
 
             data = res_json.get("data", {}) or {}
@@ -502,7 +520,10 @@ def scan_for_ticket(session):
                                     % (p_name, p_id, p_pool))
                                 log("   日期: %s" % target_date)
                                 log("=" * 60)
-                                time.sleep(random.uniform(1, 2))
+                                if submit_deadline:
+                                    time.sleep(min(random.uniform(1, 2), submit_deadline))
+                                else:
+                                    time.sleep(random.uniform(1, 2))
                                 # 锁定后、下单前先校验带队(下单人)信息
                                 check_leader_info(session, ctx)
                                 return ctx
@@ -512,7 +533,7 @@ def scan_for_ticket(session):
             else:
                 print("[%s] 扫描正常: hallTicketPoolVOS 均为 null" % now_str, end="\r")
 
-            time.sleep(random.uniform(1.0, 2.0))
+            _interval_sleep(interval)
 
         except Exception as e:
             log("扫描异常 (%s), 重建 Session 并等待" % e)
@@ -521,7 +542,7 @@ def scan_for_ticket(session):
                 session = cycronet.CronetClient(chrometls="chrome_144")
             except Exception:
                 pass
-            time.sleep(random.uniform(2.0, 5.0))
+            _interval_sleep(interval)
 
 
 # ============================================================================
