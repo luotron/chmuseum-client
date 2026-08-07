@@ -567,11 +567,70 @@ def _save_captcha_images(d):
     return saved
 
 
+def geetest_load(session):
+    """
+    极验 GeeTest v4 人机验证初始化接口 (POST https://gcaptcha4.geetest.com/load)。
+    在 getBlock 之前调用, 是极验人机验证流程的第一步 (load -> verify)。
+
+    请求参数:
+      - captcha_id : 极验分配的固定站点 ID (cfg.GEETEST_CAPTCHA_ID, 常量)
+      - challenge  : 每次会话随机的 UUID v4 (防重放流水号)
+      - risk_type / user_info : 抓包中为空串
+      - client_type: "wx"
+    请求头与 TDID 请求同款 (X-WECHAT-HOSTSIGN / 微信小程序 UA / Referer)。
+
+    返回响应 JSON (dict); 若命中极验 bypass 模式 (HTTP 410 "bypass status"),
+    视为放行, 返回 {"status": "bypass"}。失败返回 None (不阻断主流程)。
+    """
+    challenge = tdid_client._generate_req_id()   # str(uuid.uuid4())
+    body = {
+        "captcha_id": cfg.GEETEST_CAPTCHA_ID,
+        "challenge": challenge,
+        "risk_type": "",
+        "user_info": "",
+        "client_type": "wx",
+    }
+    # 极验插件 (wx1629d117cf9be937) 专用的 hostSign, 与 TDID 不同
+    host_sign = os.environ.get("GEETEST_HOST_SIGN", "")
+    headers = {
+        "Host": "gcaptcha4.geetest.com",
+        "Connection": "keep-alive",
+        "X-WECHAT-HOSTSIGN": host_sign,
+        "User-Agent": cfg.UA,
+        "xweb_xhr": "1",
+        "Content-Type": "application/json",
+        "Accept": "*/*",
+        "Sec-Fetch-Site": "cross-site",
+        "Sec-Fetch-Mode": "cors",
+        "Sec-Fetch-Dest": "empty",
+        "Referer": "https://servicewechat.com/%s/100/page-frame.html" % cfg.APP_ID,
+        "Accept-Encoding": "gzip, deflate, br",
+        "Accept-Language": "zh-CN,zh;q=0.9",
+    }
+    payload = json.dumps(body, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    try:
+        resp = session.post(cfg.GEETEST_LOAD_URL, headers=headers, data=payload, timeout=8)
+    except Exception as e:
+        log("geetest load 请求异常: %s" % e)
+        return None
+    # 410 Gone + "bypass status": 极验旁路模式, 无需真正验证, 放行
+    if resp.status_code == 410 or "bypass" in (resp.text or ""):
+        log("geetest load: bypass (challenge=%s)" % challenge)
+        return {"status": "bypass", "challenge": challenge}
+    try:
+        return resp.json()
+    except Exception:
+        log("geetest load 响应非 JSON (HTTP %s): %s" % (resp.status_code, (resp.text or "")[:120]))
+        return None
+
+
 def get_block(session, ctx):
     """请求 getBlock, 返回 data dict (含 originalImageBase64 / secretKey / token / tips)
 
     同时把验证码图与提示图保存到 cfg.CAPTCHA_DIR 本地目录, 便于对照点选。
     """
+    # getBlock 之前先调极验 load (人机验证初始化, 与风控相关)
+    geetest_load(session)
     nonce = build_nonce(session, ctx["hallId"], ctx["scheduleId"], ctx["date"])
     params = {
         "nonce": nonce,

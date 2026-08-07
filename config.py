@@ -21,6 +21,10 @@ ALL_CONFIG_URL = (
 )
 PRICE_URL = "https://wxmini.chnmuseum.cn/prod-api/pool/ingore/getPriceByScheduleId"
 GETBLOCK_URL = "https://wxmini.chnmuseum.cn/prod-api/pool/getBlock"
+# 极验 GeeTest v4 人机验证 load 接口 (getBlock 之前调用)
+GEETEST_LOAD_URL = "https://gcaptcha4.geetest.com/load"
+# 极验分配给"国博"的固定站点 captcha_id (常量, 抓包获取, 非客户端生成)
+GEETEST_CAPTCHA_ID = "435d94a5f5b138efd5dc9f9ffc7f5621"
 PLACEORDER_URL = "https://wxmini.chnmuseum.cn/prod-api/config/orderRule/placeOrder"
 CHECK_LEADER_INFO_URL = "https://wxmini.chnmuseum.cn/prod-api/config/orderRule/checkLeaderInfo"
 FRONTPAGE_URL = "https://wxmini.chnmuseum.cn/prod-api/risk/frontPage"
@@ -46,6 +50,8 @@ LOCAL_OPERATEWXDATA_URL = LOCAL_BASE_URL + "/wxapp/operateWxData"
 # ---- 风控固定参数 (getHostSign / operateWxData 的 payload) ----
 # 同盾 (TDID) 风控插件 appid, 用于 getHostSign 的 provider / plugin_id
 RISK_PLUGIN_PROVIDER = "wx63af045606be281d"
+# 极验 (GeeTest) 插件 appid, geetest_load 接口 X-WECHAT-HOSTSIGN 用
+GEETEST_PLUGIN_PROVIDER = "wx1629d117cf9be937"
 RISK_PLUGIN_INNER_VERSION = 20
 
 
@@ -299,7 +305,7 @@ def build_headers(host_ip=None):
         "Connection": "keep-alive",
         "Accept": "application/json",
         "xweb_xhr": "1",
-        "Accept-Language": "zh-CN,zh;q=0.9",
+        # "Accept-Language": "zh-CN,zh;q=0.9",
         "content-type": "application/json",
         "Host-Ip": host_ip if host_ip else "",
         "Authorization": "Bearer " + API_TOKEN,

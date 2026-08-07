@@ -143,8 +143,15 @@ def manualOrder(session, ctx):
     if resp.get("code") == 200 and resp.get("data"):
         d = resp["data"]
         log("=" * 60)
-        log("🎉 下单成功! 订单号=%s 场次=%s"
-            % (d.get("orderNumber"), d.get("schduleDate")))
+        log("🎉 下单成功!")
+        log("  订单号(orderNumber) : %s" % d.get("orderNumber"))
+        log("  订单ID(orderId)     : %s" % d.get("orderId"))
+        log("  场次(schduleDate)   : %s" % d.get("schduleDate"))
+        log("  实付(orderRealPrice): %s" % d.get("orderRealPrice"))
+        log("  创建时间(createTime) : %s" % d.get("createTime"))
+        log("  风控启用(riskEnable): %s" % d.get("riskEnable"))
+        log("  风控策略(riskPolicy) : %s" % d.get("riskPolicy"))
+        log("  需充值(needChargeCode): %s" % d.get("needChargeCode"))
         log("=" * 60)
     else:
         log("placeOrder 返回: %s" % json.dumps(resp, ensure_ascii=False)[:300])
@@ -375,13 +382,20 @@ def main():
     if resp.get("code") == 200 and resp.get("data"):
         d = resp["data"]
         log("=" * 60)
-        log("🎉 下单成功! 订单号=%s 场次=%s"
-            % (d.get("orderNumber"), d.get("schduleDate")))
+        log("🎉 下单成功!")
+        log("  订单号(orderNumber) : %s" % d.get("orderNumber"))
+        log("  订单ID(orderId)     : %s" % d.get("orderId"))
+        log("  场次(schduleDate)   : %s" % d.get("schduleDate"))
+        log("  实付(orderRealPrice): %s" % d.get("orderRealPrice"))
+        log("  创建时间(createTime) : %s" % d.get("createTime"))
+        log("  风控启用(riskEnable): %s" % d.get("riskEnable"))
+        log("  风控策略(riskPolicy) : %s" % d.get("riskPolicy"))
+        log("  需充值(needChargeCode): %s" % d.get("needChargeCode"))
         log("=" * 60)
     elif resp.get("code") == 502:
         log("placeOrder 返回: %s" % json.dumps(resp, ensure_ascii=False)[:300])
-        log("自动识别失败，尝试手动点选验证码...")
-        manualOrder(session, ctx)
+        # log("自动识别失败，尝试手动点选验证码...")
+        # manualOrder(session, ctx)
     else:
         log("placeOrder 返回: %s" % json.dumps(resp, ensure_ascii=False)[:300])
 
