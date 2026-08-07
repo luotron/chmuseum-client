@@ -183,7 +183,7 @@ def bootstrap_account(session):
     """
     运行前引导:
       1. 校验本地应用宝协议服务是否启动;
-      2. 取 accounts, 确认有可用账号 (含 openid);
+      2. POST /accounts/refresh 刷新存活状态, 取 accounts, 过滤出存活账号;
       3. 选择一个账号;
       4. 该账号 (按 openid) 在 cache/login 无登录信息 -> 执行登录流程;
       5. 把该账号登录态加载到 config (回填 API_TOKEN/OPENID/UNIONID/... )。
@@ -195,14 +195,18 @@ def bootstrap_account(session):
         return None
     log("本地服务已就绪。")
 
-    # 2) 取账号 (需含 openid 才可用; uin 可能为 null)
+    # 2) 刷新存活状态 + 取账号 (需含 openid 才可用; uin 可能为 null)
+    alive_openids, _, _ = login_mod.refresh_accounts(session)
+    if not alive_openids:
+        log("❌ 没有存活的账号, 退出。")
+        return None
     accounts = login_mod.get_accounts(session)
     if not accounts:
         log("❌ 未获取到任何账号, 退出。")
         return None
-    valid = [a for a in accounts if a.get("openid")]
+    valid = [a for a in accounts if a.get("openid") and a.get("openid") in alive_openids]
     if not valid:
-        log("❌ 账号列表里没有可用账号 (需含 openid), 退出。")
+        log("❌ 账号列表里没有可用账号 (需含 openid 且存活), 退出。")
         return None
     log("获取到 %d 个账号 (可用 %d 个)。" % (len(accounts), len(valid)))
 
@@ -255,6 +259,8 @@ def main():
         if os.path.exists(login_file):
             os.remove(login_file)
             log("已删除过期登录缓存: %s" % login_file)
+        # 重新登录前先刷新账号存活状态 (确保 login_buffer 有效)
+        login_mod.refresh_accounts(session)
         # 重新登录 (需要 uin/nickname, 从 accounts 重新获取)
         accounts = login_mod.get_accounts(session)
         acc = next((a for a in accounts if a.get("openid") == openid), None)

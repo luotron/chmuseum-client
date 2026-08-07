@@ -36,6 +36,7 @@ MINIAPP_LOGIN_URL = "https://uu.chnmuseum.cn/prod-api/api/miniAppLogin"
 LOCAL_BASE_URL = "http://127.0.0.1:8000"
 LOCAL_ACCOUNTS_URL = LOCAL_BASE_URL + "/accounts"
 LOCAL_HEALTH_URL = LOCAL_BASE_URL + "/health"
+LOCAL_REFRESH_URL = LOCAL_BASE_URL + "/accounts/refresh"
 LOCAL_GETCODE_URL = LOCAL_BASE_URL + "/wxapp/getCode"
 LOCAL_GETPHONE_URL = LOCAL_BASE_URL + "/wxapp/getPhoneNumber"
 # 运行时风控凭据: TDID_HOST_SIGN / TDID_PLUGIN_CODE 由这两个本地接口获取

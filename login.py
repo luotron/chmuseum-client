@@ -3,6 +3,7 @@ login.py — 国博小程序两段式登录 (基于本地应用宝协议服务)
 ================================================================================
 运行流程:
   0. 校验本地服务 (http://127.0.0.1:8000/health) 是否启动; 未启动直接退出。
+  0.5 POST /accounts/refresh     刷新账号存活状态, 过滤出 status=alive 的账号。
   1. GET  /accounts               取账号列表, 逐个拿 uin(主键)/openid(ref)/nickname。
   2. 若 uin 已在 cache/login/ 登录过 -> 跳过该账号。
   3. POST /wxapp/getCode          用 ref(openid) 换取微信登录 code。
@@ -140,6 +141,28 @@ def get_accounts(session):
         log("获取 accounts 失败: %s" % json.dumps(j, ensure_ascii=False)[:200])
         return []
     return j["data"]
+
+
+def refresh_accounts(session):
+    """
+    POST /accounts/refresh -> 刷新账号存活状态, 返回 status=alive 的 openid 集合。
+    返回 (alive_openids: set, total_count: int, alive_count: int)。
+    失败返回 (set(), 0, 0)。
+    """
+    try:
+        resp = session.post(cfg.LOCAL_REFRESH_URL, headers=_local_headers(),
+                            timeout=10)
+        j = resp.json()
+    except Exception as e:
+        log("刷新 accounts 异常: %s" % e)
+        return set(), 0, 0
+    if j.get("code") != 0 or not isinstance(j.get("data"), list):
+        log("刷新 accounts 失败: %s" % json.dumps(j, ensure_ascii=False)[:200])
+        return set(), 0, 0
+    data = j["data"]
+    alive = {acc["openid"] for acc in data if acc.get("status") == "alive"}
+    log("刷新 accounts 成功: 共 %d 个账号, 存活 %d 个。" % (len(data), len(alive)))
+    return alive, len(data), len(alive)
 
 
 def get_code(session, ref):
@@ -457,12 +480,24 @@ def main():
         return
     log("本地服务已就绪。")
 
+    # 0.5) 刷新账号存活状态 (只有 status=alive 的账号可用)
+    alive_openids, _, _ = refresh_accounts(session)
+    if not alive_openids:
+        log("❌ 没有存活的账号, 退出。")
+        return
+
     # 1) 取账号
     accounts = get_accounts(session)
     if not accounts:
         log("❌ 未获取到任何账号, 退出。")
         return
-    log("获取到 %d 个账号。" % len(accounts))
+
+    # 过滤: 只保留存活账号
+    accounts = [acc for acc in accounts if acc.get("openid") in alive_openids]
+    log("获取到 %d 个存活账号 (已过滤过期账号)。" % len(accounts))
+    if not accounts:
+        log("❌ 过滤后无可用账号, 退出。")
+        return
 
     ok, skip, fail = 0, 0, 0
     for acc in accounts:
