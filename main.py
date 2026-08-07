@@ -231,7 +231,6 @@ def bootstrap_account(session):
     if not cfg.load_login(openid):
         log("❌ 加载账号 openid=%s 登录信息失败 (缺少 apiToken), 退出。" % openid)
         return None
-    log("登录态已加载: userId=%s openid=%s" % (cfg.USER_ID or "-", cfg.OPENID))
     return openid
 
 
@@ -250,15 +249,38 @@ def main():
     # 0) 先校验登录态 —— getUserInfoToIndividual2Mini 返回 userInfo 才继续
     user_info = api.get_user_info(session)
     if not user_info:
-        log("❌ 获取用户信息失败, 请检查网络或 API_TOKEN。退出。")
-        return
+        log("⚠ 登录态可能已过期, 尝试重新登录 ...")
+        # 删除过期缓存, 重新走登录流程
+        login_file = os.path.join(cfg.LOGIN_DIR, "%s.json" % openid)
+        if os.path.exists(login_file):
+            os.remove(login_file)
+            log("已删除过期登录缓存: %s" % login_file)
+        # 重新登录 (需要 uin/nickname, 从 accounts 重新获取)
+        accounts = login_mod.get_accounts(session)
+        acc = next((a for a in accounts if a.get("openid") == openid), None)
+        uin = acc.get("uin") if acc else None
+        nickname = (acc.get("nickname") or acc.get("alias") or "") if acc else ""
+        token = login_mod.login_account(session, openid, uin, nickname)
+        if not token:
+            log("❌ 重新登录失败, 退出。")
+            return
+        if not cfg.load_login(openid):
+            log("❌ 重新加载登录态失败, 退出。")
+            return
+        # 重试 getUserInfo
+        user_info = api.get_user_info(session)
+        if not user_info:
+            log("❌ 重新登录后仍无法获取用户信息, 退出。")
+            return
+        log("✅ 重新登录成功, 用户信息已恢复。")
+    # 把 userId 回填到内存 (供后续 nonce 等使用)
+    cfg.USER_ID = str(user_info.get("userId") or "")
     bind_info = api.get_real_name_bind(session)
     if not bind_info:
         log("❌ 获取实名绑定信息失败, 请检查网络或 API_TOKEN。退出。")
         return
     # 把运行时回填的 userId 等持久化到 cache/login/{openid}.json
     cfg.save_login(openid)
-    log("已持久化登录态到 cache/login (openid=%s userId=%s)" % (openid, cfg.USER_ID or "-"))
     # 运行时通过本地应用宝服务获取风控参数 (TDID_HOST_SIGN / TDID_PLUGIN_CODE)
     # openid 即账号主键, 直接用于调本地风控接口
     if not login_mod.fetch_risk_params(session, openid):

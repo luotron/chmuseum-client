@@ -75,14 +75,12 @@ def _save_login(openid, uin, nickname, session_info, login_resp):
         "openid": str(openid),
         "uin": uin if uin is not None else old.get("uin"),
         "nickname": nickname or old.get("nickname") or "",
-        "savedAt": time.strftime("%Y-%m-%d %H:%M:%S"),
         "sessionKey": session_info.get("session_key"),
         "registerFlag": login_resp.get("registerFlag"),
         "login": {
             "apiToken": login_resp.get("token") or "",
             "openid": session_info.get("openid") or "",
             "unionId": session_info.get("unionid") or "",
-            "userId": str(old_login.get("userId") or ""),
             "userInfo": old_login.get("userInfo") or {},
         },
     }
@@ -199,15 +197,25 @@ def get_phone_number(session, ref):
 def get_host_sign(session, ref):
     """
     POST /wxapp/getHostSign -> 返回 X-WECHAT-HOSTSIGN 请求头值 (JSON 字符串)。
-    本地服务返回 data.result.list[0] 含 host_sign/noncestr/timestamp,
-    组装成小程序真实请求头格式 {"noncestr","timestamp","signature"}。失败返回 None。
+    本地服务返回 data.result.list, 按 cfg.RISK_HOST_SIGN_PLUGIN_ID 精确匹配目标
+    插件条目, 取 host_sign/noncestr/timestamp 组装成小程序真实请求头格式
+    {"noncestr","timestamp","signature"}。失败返回 None。
     """
     body = json.dumps({
         "ref": ref,
         "app_id": cfg.APP_ID,
         "payload": {
-            "provider": cfg.RISK_PLUGIN_PROVIDER,
-            "inner_version": cfg.RISK_PLUGIN_INNER_VERSION,
+            "app_id": cfg.APP_ID,
+            "data": json.dumps({
+                "plugins": [
+                    {"inner_version": 15, "provider": "wx1629d117cf9be937"},
+                    {"inner_version": 6, "provider": "wxe51129e09bb46147"},
+                    {"inner_version": 32, "provider": "wx63af045606be281d"},
+                    {"inner_version": 46, "provider": "wxfa43a4a7041a84de"},
+                ],
+            }, ensure_ascii=False),
+            "task_id": 0,
+            "version_type": 0,
         },
     }, ensure_ascii=False).encode("utf-8")
     try:
@@ -223,9 +231,21 @@ def get_host_sign(session, ref):
     result = (j.get("data") or {}).get("result") or {}
     lst = result.get("list") or result.get("plugins") or []
     if not lst:
-        log("getHostSign 未返回 list: %s" % json.dumps(j, ensure_ascii=False)[:200])
+        log("getHostSign 未返回 list/plugins: %s"
+            % json.dumps(j, ensure_ascii=False)[:200])
         return None
-    item = lst[0]
+    # 按 plugin_id 精确匹配目标插件条目
+    target_plugin_id = cfg.RISK_PLUGIN_PROVIDER
+    item = None
+    for entry in lst:
+        if entry.get("plugin_id") == target_plugin_id:
+            item = entry
+            break
+    if item is None:
+        log("getHostSign 未找到 plugin_id=%s 的条目 (共 %d 条): %s"
+            % (target_plugin_id, len(lst),
+               json.dumps(j, ensure_ascii=False)[:200]))
+        return None
     host_sign = item.get("host_sign")
     noncestr = item.get("noncestr")
     timestamp = item.get("timestamp")
@@ -253,7 +273,7 @@ def get_plugin_code(session, ref):
                 "api_name": "webapi_getapppluginopenpid",
                 "data": {"miniprogram_appid": cfg.APP_ID},
                 "operate_directly": False,
-                "plugin_appid": cfg.APP_ID,
+                "plugin_appid": cfg.RISK_PLUGIN_PROVIDER,
                 "env": 1,
             },
             "timeout": 60000,

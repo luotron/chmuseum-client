@@ -44,7 +44,7 @@ LOCAL_OPERATEWXDATA_URL = LOCAL_BASE_URL + "/wxapp/operateWxData"
 
 # ---- 风控固定参数 (getHostSign / operateWxData 的 payload) ----
 # 同盾 (TDID) 风控插件 appid, 用于 getHostSign 的 provider / plugin_id
-RISK_PLUGIN_PROVIDER = "wxc3b909c3d24c5417"
+RISK_PLUGIN_PROVIDER = "wx63af045606be281d"
 RISK_PLUGIN_INNER_VERSION = 20
 
 
@@ -183,12 +183,12 @@ def read_login_record(openid):
 
 
 def _apply_login_to_globals(login):
-    """把 login 段回填到本模块运行时内存变量。"""
+    """把 login 段回填到本模块运行时内存变量。userId 从 userInfo 中提取。"""
     global API_TOKEN, OPENID, UNIONID, USER_ID
     API_TOKEN = login.get("apiToken") or ""
     OPENID = login.get("openid") or ""
     UNIONID = login.get("unionId") or ""
-    USER_ID = str(login.get("userId") or "")
+    USER_ID = str((login.get("userInfo") or {}).get("userId") or "")
 
 
 def load_login(openid):
@@ -222,7 +222,6 @@ def save_login(openid=None):
         "apiToken": API_TOKEN or old_login.get("apiToken", ""),
         "openid": OPENID or old_login.get("openid", ""),
         "unionId": UNIONID or old_login.get("unionId", ""),
-        "userId": str(USER_ID or old_login.get("userId") or ""),
         "userInfo": old_login.get("userInfo") or {},
     }
     try:
