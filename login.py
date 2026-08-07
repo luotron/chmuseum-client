@@ -217,12 +217,10 @@ def get_phone_number(session, ref):
 # ============================================================================
 #  风控凭据 (TDID_HOST_SIGN / TDID_PLUGIN_CODE) 运行时获取
 # ============================================================================
-def get_host_sign(session, ref):
+def _get_host_sign_result(session, ref):
     """
-    POST /wxapp/getHostSign -> 返回 X-WECHAT-HOSTSIGN 请求头值 (JSON 字符串)。
-    本地服务返回 data.result.list, 按 cfg.RISK_HOST_SIGN_PLUGIN_ID 精确匹配目标
-    插件条目, 取 host_sign/noncestr/timestamp 组装成小程序真实请求头格式
-    {"noncestr","timestamp","signature"}。失败返回 None。
+    POST /wxapp/getHostSign -> 返回 data.result 原始 dict (含 list/plugins 等)。
+    失败返回 None。一次请求包含所有插件的 hostSign, 后续按 plugin_id 分别提取。
     """
     body = json.dumps({
         "ref": ref,
@@ -257,30 +255,56 @@ def get_host_sign(session, ref):
         log("getHostSign 未返回 list/plugins: %s"
             % json.dumps(j, ensure_ascii=False)[:200])
         return None
-    # 按 plugin_id 精确匹配目标插件条目
-    target_plugin_id = cfg.RISK_PLUGIN_PROVIDER
+    result["_merged_list"] = lst
+    return result
+
+
+def _extract_plugin_host_sign(result, plugin_id):
+    """
+    从 _get_host_sign_result 返回的 result dict 中, 按 plugin_id 提取
+    对应插件的 {"noncestr","timestamp","signature"} 紧凑 JSON 字符串。
+    找不到返回 None。
+    """
+    lst = result.get("_merged_list", [])
     item = None
     for entry in lst:
-        if entry.get("plugin_id") == target_plugin_id:
+        if entry.get("plugin_id") == plugin_id:
             item = entry
             break
     if item is None:
-        log("getHostSign 未找到 plugin_id=%s 的条目 (共 %d 条): %s"
-            % (target_plugin_id, len(lst),
-               json.dumps(j, ensure_ascii=False)[:200]))
+        log("getHostSign 未找到 plugin_id=%s 的条目 (共 %d 条)"
+            % (plugin_id, len(lst)))
         return None
     host_sign = item.get("host_sign")
     noncestr = item.get("noncestr")
     timestamp = item.get("timestamp")
     if not host_sign or not noncestr or timestamp is None:
-        log("getHostSign 字段缺失: %s" % json.dumps(item, ensure_ascii=False)[:200])
+        log("getHostSign plugin_id=%s 字段缺失: %s"
+            % (plugin_id, json.dumps(item, ensure_ascii=False)[:200]))
         return None
-    # X-WECHAT-HOSTSIGN 请求头: {"noncestr","timestamp","signature"} (紧凑 JSON)
     return json.dumps({
         "noncestr": noncestr,
         "timestamp": timestamp,
         "signature": host_sign,
     }, separators=(",", ":"), ensure_ascii=False)
+
+
+def get_host_sign(session, ref, plugin_id=None):
+    """
+    POST /wxapp/getHostSign -> 返回 X-WECHAT-HOSTSIGN 请求头值 (JSON 字符串)。
+    本地服务返回 data.result.list, 按 plugin_id 精确匹配目标插件条目,
+    取 host_sign/noncestr/timestamp 组装成小程序真实请求头格式
+    {"noncestr","timestamp","signature"}。失败返回 None。
+
+    plugin_id 默认使用 cfg.RISK_PLUGIN_PROVIDER (同盾 TDID)。
+    传 cfg.GEETEST_PLUGIN_PROVIDER 可获取极验 hostSign。
+    """
+    if plugin_id is None:
+        plugin_id = cfg.RISK_PLUGIN_PROVIDER
+    result = _get_host_sign_result(session, ref)
+    if not result:
+        return None
+    return _extract_plugin_host_sign(result, plugin_id)
 
 
 def get_plugin_code(session, ref):
@@ -334,23 +358,36 @@ def get_plugin_code(session, ref):
 
 def fetch_risk_params(session, ref):
     """
-    运行时获取 TDID 两个风控凭据并写入环境变量:
-      TDID_HOST_SIGN   <- getHostSign
-      TDID_PLUGIN_CODE <- operateWxData(webapi_getapppluginopenpid)
-    成功返回 True (两者均获取到); 任一失败返回 False。
+    运行时获取风控凭据并写入环境变量:
+      TDID_HOST_SIGN    <- getHostSign (plugin_id=cfg.RISK_PLUGIN_PROVIDER 同盾)
+      GEETEST_HOST_SIGN <- getHostSign (plugin_id=cfg.GEETEST_PLUGIN_PROVIDER 极验)
+      TDID_PLUGIN_CODE  <- operateWxData(webapi_getapppluginopenpid)
+    成功返回 True (三者均获取到); 任一失败返回 False。
     """
-    host_sign = get_host_sign(session, ref)
-    if not host_sign:
-        log("❌ 获取 TDID_HOST_SIGN 失败。")
+    # 一次 getHostSign 请求返回所有插件, 分别提取 TDID 和 Geetest 的 hostSign
+    result = _get_host_sign_result(session, ref)
+    if not result:
+        log("❌ 获取 getHostSign 结果失败。")
+        return False
+    tdid_sign = _extract_plugin_host_sign(result, cfg.RISK_PLUGIN_PROVIDER)
+    if not tdid_sign:
+        log("❌ 提取 TDID_HOST_SIGN 失败。")
+        return False
+    geetest_sign = _extract_plugin_host_sign(result, cfg.GEETEST_PLUGIN_PROVIDER)
+    if not geetest_sign:
+        log("❌ 提取 GEETEST_HOST_SIGN 失败。")
         return False
     plugin_code = get_plugin_code(session, ref)
     if not plugin_code:
         log("❌ 获取 TDID_PLUGIN_CODE 失败。")
         return False
-    os.environ["TDID_HOST_SIGN"] = host_sign
+    os.environ["TDID_HOST_SIGN"] = tdid_sign
+    os.environ["GEETEST_HOST_SIGN"] = geetest_sign
     os.environ["TDID_PLUGIN_CODE"] = plugin_code
-    log("风控凭据已获取: pluginCode=%s... \nhostSign=%s..."
-        % (plugin_code[:16], host_sign[:40]))
+    log("风控凭据已获取:")
+    log("  pluginCode=%s..." % plugin_code[:16])
+    log("  TDID hostSign=%s..." % tdid_sign[:40])
+    log("  Geetest hostSign=%s..." % geetest_sign[:40])
     return True
 
 

@@ -143,8 +143,15 @@ def manualOrder(session, ctx):
     if resp.get("code") == 200 and resp.get("data"):
         d = resp["data"]
         log("=" * 60)
-        log("🎉 下单成功! 订单号=%s 场次=%s"
-            % (d.get("orderNumber"), d.get("schduleDate")))
+        log("🎉 下单成功!")
+        log("  订单号(orderNumber) : %s" % d.get("orderNumber"))
+        log("  订单ID(orderId)     : %s" % d.get("orderId"))
+        log("  场次(schduleDate)   : %s" % d.get("schduleDate"))
+        log("  实付(orderRealPrice): %s" % d.get("orderRealPrice"))
+        log("  创建时间(createTime) : %s" % d.get("createTime"))
+        log("  风控启用(riskEnable): %s" % d.get("riskEnable"))
+        log("  风控策略(riskPolicy) : %s" % d.get("riskPolicy"))
+        log("  需充值(needChargeCode): %s" % d.get("needChargeCode"))
         log("=" * 60)
     else:
         log("placeOrder 返回: %s" % json.dumps(resp, ensure_ascii=False)[:300])
@@ -293,11 +300,6 @@ def main():
         log("❌ 获取风控参数失败, 退出。")
         return
 
-    # device_token = api.get_device_token(session)
-    # if not device_token:
-    #     log("⚠ 未获得 deviceToken, 仍尝试下单 (可能被风控拒绝)。")
-    #     device_token = ""
-    #     return
     # 1) 扫描 + 锁定 (三者齐备立即停止扫描)
     ctx = api.scan_for_ticket(session, interval=_parse_scan_interval(),
                               submit_deadline=TICKET_SUBMIT_DEADLINE)
@@ -370,13 +372,20 @@ def main():
         log("⚠ 未获得 deviceToken, 仍尝试下单 (可能被风控拒绝)。")
         device_token = ""
 
-    _deadline_sleep(random.uniform(0.5, 1))  # 下单前等待受时限约束
+    _deadline_sleep(random.uniform(1, 2))  # 下单前等待受时限约束
     resp = api.place_order(session, ctx, point_json_cipher, captcha_token, device_token)
     if resp.get("code") == 200 and resp.get("data"):
         d = resp["data"]
         log("=" * 60)
-        log("🎉 下单成功! 订单号=%s 场次=%s"
-            % (d.get("orderNumber"), d.get("schduleDate")))
+        log("🎉 下单成功!")
+        log("  订单号(orderNumber) : %s" % d.get("orderNumber"))
+        log("  订单ID(orderId)     : %s" % d.get("orderId"))
+        log("  场次(schduleDate)   : %s" % d.get("schduleDate"))
+        log("  实付(orderRealPrice): %s" % d.get("orderRealPrice"))
+        log("  创建时间(createTime) : %s" % d.get("createTime"))
+        log("  风控启用(riskEnable): %s" % d.get("riskEnable"))
+        log("  风控策略(riskPolicy) : %s" % d.get("riskPolicy"))
+        log("  需充值(needChargeCode): %s" % d.get("needChargeCode"))
         log("=" * 60)
     elif resp.get("code") == 502:
         log("placeOrder 返回: %s" % json.dumps(resp, ensure_ascii=False)[:300])
