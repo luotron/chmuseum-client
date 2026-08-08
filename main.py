@@ -300,11 +300,6 @@ def main():
         log("❌ 获取风控参数失败, 退出。")
         return
 
-    # device_token = api.get_device_token(session)
-    # if not device_token:
-    #     log("⚠ 未获得 deviceToken, 仍尝试下单 (可能被风控拒绝)。")
-    #     device_token = ""
-    #     return
     # 1) 扫描 + 锁定 (三者齐备立即停止扫描)
     ctx = api.scan_for_ticket(session, interval=_parse_scan_interval(),
                               submit_deadline=TICKET_SUBMIT_DEADLINE)
@@ -377,7 +372,7 @@ def main():
         log("⚠ 未获得 deviceToken, 仍尝试下单 (可能被风控拒绝)。")
         device_token = ""
 
-    _deadline_sleep(random.uniform(0.5, 1))  # 下单前等待受时限约束
+    _deadline_sleep(random.uniform(1, 2))  # 下单前等待受时限约束
     resp = api.place_order(session, ctx, point_json_cipher, captcha_token, device_token)
     if resp.get("code") == 200 and resp.get("data"):
         d = resp["data"]
