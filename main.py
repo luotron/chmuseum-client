@@ -51,67 +51,7 @@ from utils.captcha import CaptchaPicker, build_point_json
 from utils.captcha_auto import auto_recognize_captcha
 from api import log
 
-# ==================== 查票间隔配置 ====================
-# 每次查询之间的间隔:
-#   0        = 无间隔, 第一次查完立即查第二次
-#   "1-2"    = 每次查询间隔随机 1~2 秒 (支持 "a-b" 区间写法)
-#   "3"      = 固定 3 秒
-SCAN_INTERVAL = "1-2"
-
-
-def _parse_scan_interval():
-    """把 SCAN_INTERVAL 解析为 (min_sec, max_sec); 0/空表示无间隔返回 None。"""
-    raw = str(SCAN_INTERVAL).strip()
-    if raw in ("", "0", "0.0"):
-        return None
-    if "-" in raw:
-        a, b = raw.split("-", 1)
-        try:
-            lo, hi = float(a), float(b)
-            return (lo, hi)
-        except ValueError:
-            pass
-    try:
-        v = float(raw)
-        return (v, v)
-    except ValueError:
-        return (1.0, 2.0)  # 非法配置回退默认 1~2 秒
-
-
-# ==================== 下单时限配置 ====================
-# 检测到余票并锁定后, 到提交订单的最大允许时长 (秒):
-#   0 = 越快越好, 锁定后不做任何等待, 立即提交
-#   N = 必须在 N 秒内提交订单, 锁定后所有等待自动缩短到剩余时间内
-TICKET_SUBMIT_DEADLINE = 5
-
-_submit_deadline_ts = None   # 锁定后的下单截止时刻 (monotonic 时钟); 0 模式为 None
-
-
-def _start_submit_deadline():
-    """发现余票锁定后立即调用: 记录下单截止时刻。"""
-    global _submit_deadline_ts
-    if TICKET_SUBMIT_DEADLINE > 0:
-        _submit_deadline_ts = time.monotonic() + TICKET_SUBMIT_DEADLINE
-        log("下单时限: %d 秒内必须提交订单" % TICKET_SUBMIT_DEADLINE)
-    else:
-        _submit_deadline_ts = None
-        log("下单时限: 0 (越快越好, 锁定后不做任何等待)")
-
-
-def _deadline_sleep(seconds):
-    """
-    受 TICKET_SUBMIT_DEADLINE 约束的等待:
-      - 0 模式 / 时限未开始 / 已超时: 不等待, 立即继续;
-      - 有限时限: 最多只等 seconds, 且不超过剩余时间。
-    """
-    if _submit_deadline_ts is None:
-        return
-    remaining = _submit_deadline_ts - time.monotonic()
-    if remaining <= 0:
-        return
-    time.sleep(min(seconds, remaining))
-
-def manualOrder(session, ctx):
+def manualOrder(session, ctx, host_ip=None):
     try:
         resp = api.get_block(session, ctx)
         if not resp:
@@ -139,20 +79,25 @@ def manualOrder(session, ctx):
         log("⚠ 未获得 deviceToken, 仍尝试下单 (可能被风控拒绝)。")
         return
 
-    resp = api.place_order(session, ctx, point_json_cipher, captcha_token, device_token)
+    resp = api.place_order(session, ctx, point_json_cipher, captcha_token, device_token, host_ip=host_ip)
     if resp.get("code") == 200 and resp.get("data"):
         d = resp["data"]
-        log("=" * 60)
-        log("🎉 下单成功!")
-        log("  订单号(orderNumber) : %s" % d.get("orderNumber"))
-        log("  订单ID(orderId)     : %s" % d.get("orderId"))
-        log("  场次(schduleDate)   : %s" % d.get("schduleDate"))
-        log("  实付(orderRealPrice): %s" % d.get("orderRealPrice"))
-        log("  创建时间(createTime) : %s" % d.get("createTime"))
-        log("  风控启用(riskEnable): %s" % d.get("riskEnable"))
-        log("  风控策略(riskPolicy) : %s" % d.get("riskPolicy"))
-        log("  需充值(needChargeCode): %s" % d.get("needChargeCode"))
-        log("=" * 60)
+        risk_policy = d.get("riskPolicy")
+        if risk_policy == 1:
+            log("=" * 60)
+            log("🎉 下单成功!")
+            log("  订单号(orderNumber) : %s" % d.get("orderNumber"))
+            log("  订单ID(orderId)     : %s" % d.get("orderId"))
+            log("  场次(schduleDate)   : %s" % d.get("schduleDate"))
+            log("  实付(orderRealPrice): %s" % d.get("orderRealPrice"))
+            log("  创建时间(createTime) : %s" % d.get("createTime"))
+            log("  风控启用(riskEnable): %s" % d.get("riskEnable"))
+            log("  风控策略(riskPolicy) : %s" % d.get("riskPolicy"))
+            log("  需充值(needChargeCode): %s" % d.get("needChargeCode"))
+            log("=" * 60)
+        else:
+            log("⚠ 假下单 (riskPolicy=%s, 被风控拦截): orderNumber=%s orderId=%s"
+                % (risk_policy, d.get("orderNumber"), d.get("orderId")))
     else:
         log("placeOrder 返回: %s" % json.dumps(resp, ensure_ascii=False)[:300])
 
@@ -300,14 +245,19 @@ def main():
         log("❌ 获取风控参数失败, 退出。")
         return
 
-    # 1) 扫描 + 锁定 (三者齐备立即停止扫描)
-    ctx = api.scan_for_ticket(session, interval=_parse_scan_interval(),
-                              submit_deadline=TICKET_SUBMIT_DEADLINE)
+    # 1) 获取预约须知等真实配置 (模拟小程序正常加载流程)
+    api.gain_real_config(session)
+
+    # 2) 扫描 + 锁定 (三者齐备立即停止扫描)
+    ctx = api.scan_for_ticket(session)
     if not ctx:
         return
-    _start_submit_deadline()  # 记录下单截止时刻 (受 TICKET_SUBMIT_DEADLINE 约束)
+    # 提交订单前稍作等待, 避免过快触发风控
+    time.sleep(random.uniform(1.5, 2.0))
 
-    _deadline_sleep(random.uniform(1.0, 2.0))
+    # ★ 在 getBlock 之前预先取好 Host-Ip (腾讯校时IP加密), 下单时直接复用
+    host_ip = api.build_host_ip(session)
+
     # 2) getBlock 验证码
     try:
         resp = api.get_block(session, ctx)
@@ -343,6 +293,7 @@ def main():
                 x, y = result
                 log(f"识别成功: 中心点坐标 ({x}, {y})")
                 points = [(x, y)]
+                time.sleep(random.uniform(1, 1.5))
             else:
                 log("自动识别失败")
         else:
@@ -372,25 +323,29 @@ def main():
         log("⚠ 未获得 deviceToken, 仍尝试下单 (可能被风控拒绝)。")
         device_token = ""
 
-    _deadline_sleep(random.uniform(1, 2))  # 下单前等待受时限约束
-    resp = api.place_order(session, ctx, point_json_cipher, captcha_token, device_token)
+    resp = api.place_order(session, ctx, point_json_cipher, captcha_token, device_token, host_ip=host_ip)
     if resp.get("code") == 200 and resp.get("data"):
         d = resp["data"]
-        log("=" * 60)
-        log("🎉 下单成功!")
-        log("  订单号(orderNumber) : %s" % d.get("orderNumber"))
-        log("  订单ID(orderId)     : %s" % d.get("orderId"))
-        log("  场次(schduleDate)   : %s" % d.get("schduleDate"))
-        log("  实付(orderRealPrice): %s" % d.get("orderRealPrice"))
-        log("  创建时间(createTime) : %s" % d.get("createTime"))
-        log("  风控启用(riskEnable): %s" % d.get("riskEnable"))
-        log("  风控策略(riskPolicy) : %s" % d.get("riskPolicy"))
-        log("  需充值(needChargeCode): %s" % d.get("needChargeCode"))
-        log("=" * 60)
+        risk_policy = d.get("riskPolicy")
+        if risk_policy == 1:
+            log("=" * 60)
+            log("🎉 下单成功!")
+            log("  订单号(orderNumber) : %s" % d.get("orderNumber"))
+            log("  订单ID(orderId)     : %s" % d.get("orderId"))
+            log("  场次(schduleDate)   : %s" % d.get("schduleDate"))
+            log("  实付(orderRealPrice): %s" % d.get("orderRealPrice"))
+            log("  创建时间(createTime) : %s" % d.get("createTime"))
+            log("  风控启用(riskEnable): %s" % d.get("riskEnable"))
+            log("  风控策略(riskPolicy) : %s" % d.get("riskPolicy"))
+            log("  需充值(needChargeCode): %s" % d.get("needChargeCode"))
+            log("=" * 60)
+        else:
+            log("⚠ 假下单 (riskPolicy=%s, 被风控拦截): orderNumber=%s orderId=%s"
+                % (risk_policy, d.get("orderNumber"), d.get("orderId")))
     elif resp.get("code") == 502:
         log("placeOrder 返回: %s" % json.dumps(resp, ensure_ascii=False)[:300])
-        # log("自动识别失败，尝试手动点选验证码...")
-        # manualOrder(session, ctx)
+        log("自动识别失败，尝试手动点选验证码...")
+        manualOrder(session, ctx, host_ip=host_ip)
     else:
         log("placeOrder 返回: %s" % json.dumps(resp, ensure_ascii=False)[:300])
 

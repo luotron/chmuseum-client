@@ -25,6 +25,7 @@ import uuid as _uuid
 import http.client
 import cycronet
 import secrets
+import random
 
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -788,6 +789,76 @@ def event_report_async(session, biz_obj, uuid_str, host_sign_str=None):
     t = threading.Thread(
         target=event_report,
         args=(session, biz_obj, uuid_str, host_sign_str),
+        daemon=True,
+    )
+    t.start()
+    return t
+
+
+def report_user_init(session: cycronet.CronetClient, uuid_str: str, host_sign_str: str = None):
+    """
+    发送用户标识初始化埋点 (POST https://gatherer.m.qq.com/event/report)。
+    与 event_report 不同, 此埋点上报的是 EId_UId_Init_Start/End 事件,
+    用于标记用户身份初始化过程。应在 check_leader_info 成功后调用。
+    """
+    now_ms = int(time.time() * 1000)
+    dur = random.randint(2, 6)
+    seq = str(_uuid.uuid4())
+
+    events = [
+        {
+            "id": "EId_UId_Init_Start",
+            "content": json.dumps({"t": now_ms, "ret": 0, "msg": ""}, separators=(",", ":")),
+        },
+        {
+            "id": "EId_UId_Init_End",
+            "content": json.dumps(
+                {"t": now_ms + dur, "ret": 0, "msg": "Already inited, no need to init again", "dur": dur},
+                separators=(",", ":"),
+            ),
+        },
+    ]
+
+    payload_obj = {
+        "channel": _CHANNEL,
+        "platform": 5,
+        "events": events,
+        "buildno": 200200,
+        "uuid": uuid_str,
+        "seq": seq,
+    }
+
+    payload = json.dumps(payload_obj, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+
+    headers = {
+        "Host": "gatherer.m.qq.com",
+        "Connection": "keep-alive",
+        "X-WECHAT-HOSTSIGN": host_sign_str or "",
+        "User-Agent": cfg.UA,
+        "xweb_xhr": "1",
+        "Content-Type": "application/json",
+        "Accept": "*/*",
+        "Sec-Fetch-Site": "cross-site",
+        "Sec-Fetch-Mode": "cors",
+        "Sec-Fetch-Dest": "empty",
+        "Referer": "https://servicewechat.com/wx9e2927dd595b0473/100/page-frame.html",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Accept-Language": "zh-CN,zh;q=0.9",
+    }
+
+    try:
+        resp = session.post(_EVENT_REPORT_PATH, headers=headers, data=payload, timeout=8)
+        return resp.json()
+    except Exception as e:
+        _log("❌ report_user_init 请求失败: %s" % e)
+        return None
+
+
+def report_user_init_async(session, uuid_str, host_sign_str=None):
+    """异步发送用户初始化埋点 (后台线程, fire-and-forget)。返回启动的 Thread。"""
+    t = threading.Thread(
+        target=report_user_init,
+        args=(session, uuid_str, host_sign_str),
         daemon=True,
     )
     t.start()

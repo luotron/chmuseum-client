@@ -27,6 +27,7 @@ GEETEST_LOAD_URL = "https://gcaptcha4.geetest.com/load"
 GEETEST_CAPTCHA_ID = "435d94a5f5b138efd5dc9f9ffc7f5621"
 PLACEORDER_URL = "https://wxmini.chnmuseum.cn/prod-api/config/orderRule/placeOrder"
 CHECK_LEADER_INFO_URL = "https://wxmini.chnmuseum.cn/prod-api/config/orderRule/checkLeaderInfo"
+GAIN_REAL_CONFIG_URL = "https://wapticket.chnmuseum.cn/prod-api/basesetting/HallSetting/ingore/gainRealConfig?channel=wxMini&p=wxmini"
 FRONTPAGE_URL = "https://wxmini.chnmuseum.cn/prod-api/risk/frontPage"
 CONTACTER_LIST_URL = "https://wxmini.chnmuseum.cn/prod-api/basesetting/HallSetting/gainUserContacterList?p=wxmini"
 ORDER_INFO_BY_STATUS_URL = "https://wxmini.chnmuseum.cn/prod-api/order/OrderInfo/getOrderInfoByStatus?hallType=91&status=1&p=wxmini"
@@ -305,7 +306,6 @@ def build_headers(host_ip=None):
         "Connection": "keep-alive",
         "Accept": "application/json",
         "xweb_xhr": "1",
-        # "Accept-Language": "zh-CN,zh;q=0.9",
         "content-type": "application/json",
         "Host-Ip": host_ip if host_ip else "",
         "Authorization": "Bearer " + API_TOKEN,

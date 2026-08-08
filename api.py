@@ -89,6 +89,9 @@ def get_real_name_bind(session):
 # ============================================================================
 #  1. 腾讯校时 + nonce
 # ============================================================================
+# 校时结果缓存 (避免短时间内重复 HTTP 请求), TTL=3秒
+_checktime_cache = {"ts": 0, "t": 0, "ip": None}
+
 def _parse_checktime(text):
     """
     解析腾讯校时响应:
@@ -122,17 +125,26 @@ def fetch_server_time_ip(session):
     """
     腾讯校时: GET checktime。返回 (t_秒, ip)。
       t 失败退回本地时间; ip 失败返回 None。
+    结果缓存 3 秒, 避免 getBlock 前 build_host_ip 和 getBlock 内 build_nonce
+    重复请求同一接口。
     """
+    global _checktime_cache
+    now = time.time()
+    if now - _checktime_cache["ts"] < 3:
+        return _checktime_cache["t"], _checktime_cache["ip"]
     try:
         resp = session.get(cfg.CHECKTIME_URL, headers=cfg.build_headers(), timeout=5)
         if resp.status_code == 200:
             t_val, ip_val = _parse_checktime(resp.text)
             if t_val is None:
-                t_val = int(time.time())
+                t_val = int(now)
+            _checktime_cache = {"ts": now, "t": t_val, "ip": ip_val}
             return t_val, ip_val
     except Exception as e:
         log("校时失败, 使用本地时间: %s" % e)
-    return int(time.time()), None
+    t_fallback = int(now)
+    _checktime_cache = {"ts": now, "t": t_fallback, "ip": None}
+    return t_fallback, None
 
 
 def fetch_server_ts(session):
@@ -303,6 +315,28 @@ def fetch_price_details(session, hall_id, schedule_id, query_date):
     return []
 
 
+def gain_real_config(session):
+    """
+    GET /prod-api/basesetting/HallSetting/ingore/gainRealConfig — 获取预约须知等真实配置。
+    在 scan_for_ticket 之前调用一次, 模拟小程序正常加载流程。
+    返回 data dict (含 s/n/c/p/u 字段); 失败返回 None。
+    """
+    try:
+        resp = session.get(cfg.GAIN_REAL_CONFIG_URL, headers=cfg.build_headers(), timeout=8)
+        if resp.status_code != 200:
+            log("gainRealConfig HTTP %s" % resp.status_code)
+            return None
+        j = resp.json()
+    except Exception as e:
+        log("gainRealConfig 异常: %s" % e)
+        return None
+    if j.get("code") == 200:
+        log("gainRealConfig 成功")
+        return j.get("data")
+    log("gainRealConfig 失败: %s" % json.dumps(j, ensure_ascii=False)[:200])
+    return None
+
+
 def check_leader_info(session, ctx):
     """
     POST /prod-api/config/orderRule/checkLeaderInfo — 校验带队(下单人)信息。
@@ -369,49 +403,31 @@ def is_in_time_range():
     
     return start_time <= current_time <= end_time
 
-def _interval_sleep(interval):
-    """按查票间隔配置 sleep; interval=None 表示无间隔, 立即进入下一次查询。"""
-    if not interval:
-        return
-    lo, hi = interval
-    if hi <= lo:
-        time.sleep(lo)
-    else:
-        time.sleep(random.uniform(lo, hi))
-
-
-def scan_for_ticket(session, interval=None, submit_deadline=None):
+def scan_for_ticket(session):
     """
     轮询扫描余票。一旦发现某场次 ticketPool>0 且存在 priceId(余票>0),
     立即返回锁定的上下文 dict:
         { hallId, scheduleId, priceId, date, hallName, schedName, priceName }
-    否则持续轮询。interval 为 (min_sec, max_sec) 秒元组;
-    interval=None 表示无间隔 (第一次查完立即查第二次)。
-    submit_deadline: 锁定后到提交订单的时限 (秒):
-        0 = 越快越好, 锁定后不做任何等待; N = 锁定后等待不超过 N 秒;
-        None = 不启用 (保持默认 1~2 秒等待)。
+    否则持续轮询 (随机 1~2 秒间隔)。
     """
-    if interval:
-        log("开始监听余票 (随机 %.1f~%.1f 秒间隔)... 按 Ctrl+C 退出"
-            % (interval[0], interval[1]))
-    else:
-        log("开始监听余票 (无间隔, 连续查询)... 按 Ctrl+C 退出")
+    log("开始监听余票 (随机 1~2 秒间隔)... 按 Ctrl+C 退出")
     while True:
         now_str = datetime.now().strftime("%H:%M:%S")
         try:
             # 每次拉取 ALL_CONFIG 前先做风控前置校验 (code = deviceToken)
             front_page(session)
+            # time.sleep(random.uniform(1.0, 2.0))
             resp = session.get(cfg.ALL_CONFIG_URL, headers=cfg.build_headers(), timeout=5)
 
             if resp.status_code != 200:
                 log("HTTP %s, 稍后重试" % resp.status_code)
-                _interval_sleep(interval)
+                time.sleep(random.uniform(2.0, 5.0))
                 continue
 
             res_json = resp.json()
             if res_json.get("code") != 200:
                 log("接口 code=%s, 稍后重试" % res_json.get("code"))
-                _interval_sleep(interval)
+                time.sleep(random.uniform(2.0, 5.0))
                 continue
 
             data = res_json.get("data", {}) or {}
@@ -445,11 +461,12 @@ def scan_for_ticket(session, interval=None, submit_deadline=None):
                         sch_pool = sch.get("ticketPool", 0) or 0
                         if sch_pool <= 0:
                             continue
-
-                        # 与小程序流程一致: 查价格前先请求联系人列表与订单状态接口
+                        # 选择入馆日期->点击个人预约
+                        time.sleep(random.uniform(0.5, 1.0))
                         get_order_info_by_status(session)
+                        # 滑动观众预约须知弹窗 -> 查 priceId
+                        time.sleep(random.uniform(1.0, 2.0))
                         gain_user_contacter_list(session)
-                        # 场次有余票 -> 查 priceId
                         price_list = fetch_price_details(
                             session, hall_id, schedule_id, target_date
                         )
@@ -482,12 +499,18 @@ def scan_for_ticket(session, interval=None, submit_deadline=None):
                                     % (p_name, p_id, p_pool))
                                 log("   日期: %s" % target_date)
                                 log("=" * 60)
-                                if submit_deadline:
-                                    time.sleep(min(random.uniform(1, 2), submit_deadline))
-                                else:
-                                    time.sleep(random.uniform(1, 2))
                                 # 锁定后、下单前先校验带队(下单人)信息
+                                time.sleep(random.uniform(1, 2))
                                 check_leader_info(session, ctx)
+                                # 用户标识初始化埋点 (后台线程, fire-and-forget)
+                                tdid_state = tdid_client._load_state()
+                                if tdid_state.get("uuid"):
+                                    tdid_client.report_user_init_async(
+                                        session, tdid_state["uuid"],
+                                        os.environ.get("TDID_HOST_SIGN", ""),
+                                    )
+                                # 调极验 load (人机验证初始化, 与风控相关)
+                                geetest_load(session)
                                 return ctx
 
             if found_any_hall:
@@ -495,7 +518,7 @@ def scan_for_ticket(session, interval=None, submit_deadline=None):
             else:
                 print("[%s] 扫描正常: hallTicketPoolVOS 均为 null" % now_str, end="\r")
 
-            _interval_sleep(interval)
+            time.sleep(random.uniform(1.0, 2.0))
 
         except Exception as e:
             log("扫描异常 (%s), 重建 Session 并等待" % e)
@@ -504,7 +527,7 @@ def scan_for_ticket(session, interval=None, submit_deadline=None):
                 session = cycronet.CronetClient(chrometls="chrome_144")
             except Exception:
                 pass
-            _interval_sleep(interval)
+            time.sleep(random.uniform(2.0, 5.0))
 
 
 # ============================================================================
@@ -629,8 +652,6 @@ def get_block(session, ctx):
 
     同时把验证码图与提示图保存到 cfg.CAPTCHA_DIR 本地目录, 便于对照点选。
     """
-    # getBlock 之前先调极验 load (人机验证初始化, 与风控相关)
-    geetest_load(session)
     nonce = build_nonce(session, ctx["hallId"], ctx["scheduleId"], ctx["date"])
     params = {
         "nonce": nonce,
@@ -670,7 +691,7 @@ def get_device_token(session: cycronet.CronetClient):
 # ============================================================================
 #  5. placeOrder 下单
 # ============================================================================
-def place_order(session, ctx, point_json_cipher, captcha_token, device_token):
+def place_order(session, ctx, point_json_cipher, captcha_token, device_token, host_ip=None):
     date = ctx["date"]                 # yyyy-MM-dd
     use_date = date + " 00:00:00"
     body = {
@@ -705,8 +726,10 @@ def place_order(session, ctx, point_json_cipher, captcha_token, device_token):
         "deviceToken": device_token,
         "p": "wxmini",
     }
-    # 下单前实时调 checktime 取公网 IP 并按小程序方式加密, 写入 Host-Ip 请求头
-    host_ip = build_host_ip(session)
+    # Host-Ip: 优先使用调用方预先取好的缓存值 (在 getBlock 之前已调 fetch_server_time_ip);
+    # 未传入时退回实时取 (兼容旧调用路径)。
+    if host_ip is None:
+        host_ip = build_host_ip(session)
     resp = session.post(
         cfg.PLACEORDER_URL, headers=cfg.build_headers(host_ip=host_ip),
         data=json.dumps(body, ensure_ascii=False).encode("utf-8"),
