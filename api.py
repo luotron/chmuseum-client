@@ -315,26 +315,48 @@ def fetch_price_details(session, hall_id, schedule_id, query_date):
     return []
 
 
+_gain_real_config_done = False  # 追踪 gainRealConfig 是否已完成首次调用
+
+
 def gain_real_config(session):
     """
     GET /prod-api/basesetting/HallSetting/ingore/gainRealConfig — 获取预约须知等真实配置。
-    在 scan_for_ticket 之前调用一次, 模拟小程序正常加载流程。
-    返回 data dict (含 s/n/c/p/u 字段); 失败返回 None。
+    首次调用: 发送 2 轮 event/report 埋点, 然后请求 API。
+    后续调用: 发送 1 轮 "Already inited" 埋点, 跳过 API 请求 (返回 None)。
     """
-    try:
-        resp = session.get(cfg.GAIN_REAL_CONFIG_URL, headers=cfg.build_headers(), timeout=8)
-        if resp.status_code != 200:
-            log("gainRealConfig HTTP %s" % resp.status_code)
+    global _gain_real_config_done
+    tdid_state = tdid_client._load_state()
+    uuid_str = tdid_state.get("uuid", "")
+    host_sign = os.environ.get("TDID_HOST_SIGN", "")
+
+    if not _gain_real_config_done:
+        # ★ 首次: 发送 2 轮 TDID 初始化埋点
+        if uuid_str:
+            tdid_client.report_tdid_init_first(session, uuid_str, host_sign)
+        else:
+            log("gainRealConfig 跳过埋点: uuid 为空")
+        _gain_real_config_done = True
+
+        # 然后请求 gainRealConfig API
+        try:
+            resp = session.get(cfg.GAIN_REAL_CONFIG_URL, headers=cfg.build_headers(), timeout=8)
+            if resp.status_code != 200:
+                log("gainRealConfig HTTP %s" % resp.status_code)
+                return None
+            j = resp.json()
+        except Exception as e:
+            log("gainRealConfig 异常: %s" % e)
             return None
-        j = resp.json()
-    except Exception as e:
-        log("gainRealConfig 异常: %s" % e)
+        if j.get("code") == 200:
+            log("gainRealConfig 成功")
+            return j.get("data")
+        log("gainRealConfig 失败: %s" % json.dumps(j, ensure_ascii=False)[:200])
         return None
-    if j.get("code") == 200:
-        log("gainRealConfig 成功")
-        return j.get("data")
-    log("gainRealConfig 失败: %s" % json.dumps(j, ensure_ascii=False)[:200])
-    return None
+    else:
+        # ★ 后续调用: 发送 "Already inited" 埋点, 跳过 API
+        if uuid_str:
+            tdid_client.report_user_init(session, uuid_str, host_sign)
+        return None
 
 
 def check_leader_info(session, ctx):

@@ -795,6 +795,85 @@ def event_report_async(session, biz_obj, uuid_str, host_sign_str=None):
     return t
 
 
+def report_tdid_init_first(session: cycronet.CronetClient, uuid_str: str, host_sign_str: str = None):
+    """
+    首次 gainRealConfig 前需要发送两轮 event/report:
+      Report 1: EId_UId_Init_Start + EId_TId_Init_Start + EId_TId_Init_End
+      Report 2: EId_UId_Init_End
+    两轮使用相同的 uuid / seq。
+    """
+    now_ms = int(time.time() * 1000)
+    dur1 = random.randint(3, 5)
+    dur2 = random.randint(2, 5)
+    seq = str(_uuid.uuid4())
+
+    # ---- Report 1 ----
+    events1 = [
+        {
+            "id": "EId_UId_Init_Start",
+            "content": json.dumps({"t": now_ms, "ret": 0, "msg": ""}, separators=(",", ":")),
+        },
+        {
+            "id": "EId_TId_Init_Start",
+            "content": json.dumps({"t": now_ms + 1, "ret": 0, "msg": ""}, separators=(",", ":")),
+        },
+        {
+            "id": "EId_TId_Init_End",
+            "content": json.dumps(
+                {"t": now_ms + 1 + dur1, "ret": 0, "msg": "", "dur": dur1},
+                separators=(",", ":"),
+            ),
+        },
+    ]
+    _post_event_report(session, uuid_str, host_sign_str, seq, events1)
+
+    # ---- Report 2 (相同 seq) ----
+    events2 = [
+        {
+            "id": "EId_UId_Init_End",
+            "content": json.dumps(
+                {"t": now_ms + dur2, "ret": 0, "msg": "", "dur": dur2},
+                separators=(",", ":"),
+            ),
+        },
+    ]
+    _post_event_report(session, uuid_str, host_sign_str, seq, events2)
+
+
+def _post_event_report(session, uuid_str, host_sign_str, seq, events):
+    """发送单次 event/report POST 请求。"""
+    payload_obj = {
+        "channel": _CHANNEL,
+        "platform": 5,
+        "events": events,
+        "buildno": 200200,
+        "uuid": uuid_str,
+        "seq": seq,
+    }
+    payload = json.dumps(payload_obj, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    headers = {
+        "Host": "gatherer.m.qq.com",
+        "Connection": "keep-alive",
+        "X-WECHAT-HOSTSIGN": host_sign_str or "",
+        "User-Agent": cfg.UA,
+        "xweb_xhr": "1",
+        "Content-Type": "application/json",
+        "Accept": "*/*",
+        "Sec-Fetch-Site": "cross-site",
+        "Sec-Fetch-Mode": "cors",
+        "Sec-Fetch-Dest": "empty",
+        "Referer": "https://servicewechat.com/wx9e2927dd595b0473/100/page-frame.html",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Accept-Language": "zh-CN,zh;q=0.9",
+    }
+    try:
+        resp = session.post(_EVENT_REPORT_PATH, headers=headers, data=payload, timeout=8)
+        return resp.json()
+    except Exception as e:
+        _log("❌ _post_event_report 请求失败: %s" % e)
+        return None
+
+
 def report_user_init(session: cycronet.CronetClient, uuid_str: str, host_sign_str: str = None):
     """
     发送用户标识初始化埋点 (POST https://gatherer.m.qq.com/event/report)。

@@ -52,24 +52,27 @@ from utils.captcha_auto import auto_recognize_captcha
 from api import log
 
 def manualOrder(session, ctx, host_ip=None):
+    """
+    手动验证码模式下单 (placeOrder 502 时触发)。
+    返回 True 表示下单成功 (riskPolicy==1), False 表示需要重试。
+    """
     try:
         resp = api.get_block(session, ctx)
         if not resp:
-            return
+            return False
         if resp.get("code") != 200 or not resp.get("data"):
             raise RuntimeError(json.dumps(resp, ensure_ascii=False)[:200])
         block = resp["data"]
-        log("getBlock 成功: docType=%s secretKey=%s captchaToken=%s"
+        log("manualOrder getBlock 成功: docType=%s secretKey=%s captchaToken=%s"
                 % (block.get("docType"), block.get("secretKey"), block.get("token")))
     except Exception as e:
-        log("getBlock 失败: %s" % e)
-        main()  # 失败重试
-        return
+        log("manualOrder getBlock 失败: %s" % e)
+        return False
     picker = CaptchaPicker(block)
     points = picker.run()
     if not points:
         log("已取消点选, 退出。")
-        return
+        return False
     point_json_cipher = build_point_json(points, block.get("secretKey"))
     log("pointJson(加密)=%s..." % point_json_cipher[:40])
     captcha_token = block.get("token")
@@ -77,7 +80,7 @@ def manualOrder(session, ctx, host_ip=None):
     device_token = api.get_device_token(session)
     if not device_token:
         log("⚠ 未获得 deviceToken, 仍尝试下单 (可能被风控拒绝)。")
-        return
+        device_token = ""
 
     resp = api.place_order(session, ctx, point_json_cipher, captcha_token, device_token, host_ip=host_ip)
     if resp.get("code") == 200 and resp.get("data"):
@@ -95,11 +98,14 @@ def manualOrder(session, ctx, host_ip=None):
             log("  风控策略(riskPolicy) : %s" % d.get("riskPolicy"))
             log("  需充值(needChargeCode): %s" % d.get("needChargeCode"))
             log("=" * 60)
+            return True
         else:
-            log("⚠ 假下单 (riskPolicy=%s, 被风控拦截): orderNumber=%s orderId=%s"
+            log("⚠ manualOrder 假下单 (riskPolicy=%s, 被风控拦截): orderNumber=%s orderId=%s"
                 % (risk_policy, d.get("orderNumber"), d.get("orderId")))
+            return False
     else:
-        log("placeOrder 返回: %s" % json.dumps(resp, ensure_ascii=False)[:300])
+        log("manualOrder placeOrder 返回: %s" % json.dumps(resp, ensure_ascii=False)[:300])
+        return False
 
 def _select_account(accounts):
     """
@@ -193,7 +199,17 @@ def bootstrap_account(session):
 def main():
     # 打印所有 cycronet 请求响应的 Set-Cookie (全局 patch, 只需一次)
     # cfg.install_cookie_logger()
-    session = cycronet.CronetClient(chrometls="chrome_133")
+    
+    # 是否开启抓包
+    PROXY_ENABLE = False  # True/False
+    # 替换为你小黄鸟监听的真实 IP 和端口
+    PROXY = "http://192.168.124.14:9000"
+    proxies = {
+        "http": PROXY,
+        "https": PROXY,
+    }
+    
+    session = cycronet.CronetClient(chrometls="chrome_133", verify=False, proxies=proxies) if PROXY_ENABLE and PROXY else cycronet.CronetClient(chrometls="chrome_133", verify=False)
 
     # ★ 引导: 本地服务/账号/登录 -> 加载登录态到 config
     openid = bootstrap_account(session)
@@ -245,109 +261,126 @@ def main():
         log("❌ 获取风控参数失败, 退出。")
         return
 
-    # 1) 获取预约须知等真实配置 (模拟小程序正常加载流程)
-    api.gain_real_config(session)
-
-    # 2) 扫描 + 锁定 (三者齐备立即停止扫描)
-    ctx = api.scan_for_ticket(session)
-    if not ctx:
-        return
-    # 提交订单前稍作等待, 避免过快触发风控
-    time.sleep(random.uniform(1.5, 2.0))
-
-    # ★ 在 getBlock 之前预先取好 Host-Ip (腾讯校时IP加密), 下单时直接复用
-    host_ip = api.build_host_ip(session)
-
-    # 2) getBlock 验证码
-    try:
-        resp = api.get_block(session, ctx)
-        if not resp:
-            return
-        if resp.get("code") != 200 or not resp.get("data"):
-            raise RuntimeError(json.dumps(resp, ensure_ascii=False)[:200])
-        block = resp["data"]
-        api._save_captcha_images(block)  # 保存验证码图 + 提示图
-        log("getBlock 成功: docType=%s secretKey=%s captchaToken=%s"
-                % (block.get("docType"), block.get("secretKey"), block.get("token")))
-    except Exception as e:
-        log("getBlock 失败: %s" % e)
-        main()  # 失败重试
-        return
-
-    # 3) 验证码识别
-    points = None
-    # 检查API是否可用
-    if recognizer.check_api_available():
-        log("本地模型API可用，开始识别...")
-        original_image_base64 = block.get("originalImageBase64")
-        jigsaw_image_base64 = block.get("jigsawImageBase64")
-        secret_key = block.get("secretKey")
+    # 2) 下单重试循环：从 scan_for_ticket 开始, 直到成功或用户 Ctrl+C
+    retry = 0
+    while True:
+        if retry > 0:
+            log("=" * 60)
+            log("🔄 第 %d 次重试下单 (从 scan_for_ticket 重新开始)..." % (retry))
+            log("=" * 60)
+            time.sleep(random.uniform(2.0, 4.0))  # 重试前稍作等待
+        retry += 1
         
-        if original_image_base64 and jigsaw_image_base64:
-            result = recognizer.recognize_center_point(
-                original_image_base64=original_image_base64,
-                jigsaw_image_base64=jigsaw_image_base64,
-                secret_key=secret_key
-            )
-            if result:
-                x, y = result
-                log(f"识别成功: 中心点坐标 ({x}, {y})")
-                points = [(x, y)]
-                time.sleep(random.uniform(1, 1.5))
-            else:
-                log("自动识别失败")
-        else:
-            log("缺少验证码图像数据，无法自动识别")
-    else:
-        log("本地模型API不可用")
-    
-    # 如果自动识别失败或模式为manual，使用手动识别
-    if not points:
-        log("弹出验证码窗口，请点选目标图案后点『确认提交』...")
-        picker = CaptchaPicker(block)
-        points = picker.run()
-        if not points:
-            log("已取消点选, 退出。")
+        # 1) 获取预约须知等真实配置 (模拟小程序正常加载流程)
+        api.gain_real_config(session)
+        time.sleep(random.uniform(0.5, 1.0))
+        
+        # 扫描 + 锁定 (三者齐备立即停止扫描)
+        ctx = api.scan_for_ticket(session)
+        if not ctx:
             return
-    if not points:
-        log("❌ 验证码识别失败，退出。")
-        return
+        # 提交订单前稍作等待, 避免过快触发风控
+        time.sleep(random.uniform(1.5, 2.0))
 
-    # 4) pointJson 加密
-    point_json_cipher = build_point_json(points, block.get("secretKey"))
-    log("pointJson(加密)=%s..." % point_json_cipher[:40])
-    captcha_token = block.get("token")
+        # ★ 在 getBlock 之前预先取好 Host-Ip (腾讯校时IP加密), 下单时直接复用
+        host_ip = api.build_host_ip(session)
 
-    device_token = api.get_device_token(session)
-    if not device_token:
-        log("⚠ 未获得 deviceToken, 仍尝试下单 (可能被风控拒绝)。")
-        device_token = ""
+        # getBlock 验证码
+        try:
+            resp = api.get_block(session, ctx)
+            if not resp or resp.get("code") != 200 or not resp.get("data"):
+                log("getBlock 失败: %s" % (json.dumps(resp, ensure_ascii=False)[:200] if resp else "响应为空"))
+                continue  # 重试: 回到 scan_for_ticket
+            block = resp["data"]
+            api._save_captcha_images(block)  # 保存验证码图 + 提示图
+            log("getBlock 成功: docType=%s secretKey=%s captchaToken=%s"
+                    % (block.get("docType"), block.get("secretKey"), block.get("token")))
+        except Exception as e:
+            log("getBlock 异常: %s" % e)
+            continue  # 重试: 回到 scan_for_ticket
 
-    resp = api.place_order(session, ctx, point_json_cipher, captcha_token, device_token, host_ip=host_ip)
-    if resp.get("code") == 200 and resp.get("data"):
-        d = resp["data"]
-        risk_policy = d.get("riskPolicy")
-        if risk_policy == 1:
-            log("=" * 60)
-            log("🎉 下单成功!")
-            log("  订单号(orderNumber) : %s" % d.get("orderNumber"))
-            log("  订单ID(orderId)     : %s" % d.get("orderId"))
-            log("  场次(schduleDate)   : %s" % d.get("schduleDate"))
-            log("  实付(orderRealPrice): %s" % d.get("orderRealPrice"))
-            log("  创建时间(createTime) : %s" % d.get("createTime"))
-            log("  风控启用(riskEnable): %s" % d.get("riskEnable"))
-            log("  风控策略(riskPolicy) : %s" % d.get("riskPolicy"))
-            log("  需充值(needChargeCode): %s" % d.get("needChargeCode"))
-            log("=" * 60)
+        # 验证码识别
+        points = None
+        # 检查API是否可用
+        if recognizer.check_api_available():
+            log("本地模型API可用，开始识别...")
+            original_image_base64 = block.get("originalImageBase64")
+            jigsaw_image_base64 = block.get("jigsawImageBase64")
+            secret_key = block.get("secretKey")
+            
+            if original_image_base64 and jigsaw_image_base64:
+                result = recognizer.recognize_center_point(
+                    original_image_base64=original_image_base64,
+                    jigsaw_image_base64=jigsaw_image_base64,
+                    secret_key=secret_key
+                )
+                if result:
+                    x, y = result
+                    log(f"识别成功: 中心点坐标 ({x}, {y})")
+                    points = [(x, y)]
+                    time.sleep(random.uniform(1, 1.5))
+                else:
+                    log("自动识别失败")
+            else:
+                log("缺少验证码图像数据，无法自动识别")
         else:
-            log("⚠ 假下单 (riskPolicy=%s, 被风控拦截): orderNumber=%s orderId=%s"
-                % (risk_policy, d.get("orderNumber"), d.get("orderId")))
-    elif resp.get("code") == 502:
-        log("placeOrder 返回: %s" % json.dumps(resp, ensure_ascii=False)[:300])
-        log("自动识别失败，尝试手动点选验证码...")
-        manualOrder(session, ctx, host_ip=host_ip)
-    else:
-        log("placeOrder 返回: %s" % json.dumps(resp, ensure_ascii=False)[:300])
+            log("本地模型API不可用")
+        
+        # 如果自动识别失败或模式为manual，使用手动识别
+        if not points:
+            log("弹出验证码窗口，请点选目标图案后点『确认提交』...")
+            picker = CaptchaPicker(block)
+            points = picker.run()
+            if not points:
+                log("已取消点选, 退出。")
+                return
+        if not points:
+            log("❌ 验证码识别失败，重试...")
+            continue  # 重试: 回到 scan_for_ticket
+
+        # pointJson 加密
+        point_json_cipher = build_point_json(points, block.get("secretKey"))
+        log("pointJson(加密)=%s..." % point_json_cipher[:40])
+        captcha_token = block.get("token")
+
+        device_token = api.get_device_token(session)
+        if not device_token:
+            log("⚠ 未获得 deviceToken, 仍尝试下单 (可能被风控拒绝)。")
+            device_token = ""
+
+        resp = api.place_order(session, ctx, point_json_cipher, captcha_token, device_token, host_ip=host_ip)
+        if resp.get("code") == 200 and resp.get("data"):
+            d = resp["data"]
+            risk_policy = d.get("riskPolicy")
+            if risk_policy == 1:
+                log("=" * 60)
+                log("🎉 下单成功!")
+                log("  订单号(orderNumber) : %s" % d.get("orderNumber"))
+                log("  订单ID(orderId)     : %s" % d.get("orderId"))
+                log("  场次(schduleDate)   : %s" % d.get("schduleDate"))
+                log("  实付(orderRealPrice): %s" % d.get("orderRealPrice"))
+                log("  创建时间(createTime) : %s" % d.get("createTime"))
+                log("  风控启用(riskEnable): %s" % d.get("riskEnable"))
+                log("  风控策略(riskPolicy) : %s" % d.get("riskPolicy"))
+                log("  需充值(needChargeCode): %s" % d.get("needChargeCode"))
+                log("=" * 60)
+                return  # 成功, 终止程序
+            else:
+                log("⚠ 假下单 (riskPolicy=%s, 被风控拦截): orderNumber=%s orderId=%s"
+                    % (risk_policy, d.get("orderNumber"), d.get("orderId")))
+                continue  # 重试: 回到 scan_for_ticket
+        elif resp.get("code") == 502:
+            log("placeOrder 返回: %s" % json.dumps(resp, ensure_ascii=False)[:300])
+            log("502 错误, 尝试手动点选验证码下单...")
+            if manualOrder(session, ctx, host_ip=host_ip):
+                return  # manualOrder 成功
+            # manualOrder 失败, 继续循环重试
+            continue
+        else:
+            log("placeOrder 返回: %s" % json.dumps(resp, ensure_ascii=False)[:300])
+            continue  # 重试: 回到 scan_for_ticket
+
+
 
 if __name__ == "__main__":
     try:
