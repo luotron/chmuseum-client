@@ -11,6 +11,8 @@ bm_captcha.py — 验证码可视化点选窗口 + pointJson 生成
 import base64
 import io
 import json
+import random
+import re
 import tkinter as tk
 
 import config as cfg
@@ -115,7 +117,7 @@ class CaptchaPicker:
             return
         parts = []
         for i, (px, py) in enumerate(self.points, 1):
-            parts.append("点%d 像素(%.0f,%.0f) -> 输出(%.0f,%.0f)"
+            parts.append("点%d 像素(%.1f,%.1f) -> 输出(%.1f,%.1f)"
                          % (i, px, py, px - cfg.POINT_OFFSET, py - cfg.POINT_OFFSET))
         self.info.config(text="\n".join(parts))
 
@@ -137,14 +139,22 @@ def build_point_json(points, secret_key):
       单点:  明文 = {"x": px-10, "y": py-10}
       多点:  明文 = {"pointVOS":[{"x":px-10,"y":py-10}, ...]} (文字点选)
     然后 AES-128-ECB(secretKey) -> Base64。secret_key 为空则返回明文 (调试)。
+
+    坐标均添加 ±0.5px 随机偏差以模拟人工点击。
     """
     off = cfg.POINT_OFFSET
-    if len(points) == 1:
-        px, py = points[0]
-        plain_obj = {"x": px - off, "y": py - off}
-    else:
-        plain_obj = {"pointVOS": [{"x": px - off, "y": py - off} for (px, py) in points]}
+    px, py = points[0]
+    plain_obj = {
+        "x": float(px - off) + random.uniform(-0.5, 0.5),
+        "y": float(py - off) + random.uniform(-0.5, 0.5),
+    }
     plain = json.dumps(plain_obj, separators=(",", ":"), ensure_ascii=False)
+    # 统一浮点数精度为 15 位小数, 匹配小程序 JSON.stringify 的输出格式
+    plain = re.sub(
+        r"(?<=:)-?\d+\.\d+",
+        lambda m: format(float(m.group()), ".15f"),
+        plain,
+    )
     print("pointJson 明文:", plain)
     if not secret_key:
         return plain

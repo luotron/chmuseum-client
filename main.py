@@ -280,7 +280,7 @@ def main():
         if not ctx:
             return
         # 提交订单前稍作等待, 避免过快触发风控
-        time.sleep(random.uniform(1.5, 2.0))
+        time.sleep(random.uniform(1.5, 1.6))
 
         # ★ 在 getBlock 之前预先取好 Host-Ip (腾讯校时IP加密), 下单时直接复用
         host_ip = api.build_host_ip(session)
@@ -318,7 +318,7 @@ def main():
                     x, y = result
                     log(f"识别成功: 中心点坐标 ({x}, {y})")
                     points = [(x, y)]
-                    time.sleep(random.uniform(1, 1.5))
+                    time.sleep(random.uniform(0.5, 1.0)) # 模拟人工操作延迟
                 else:
                     log("自动识别失败")
             else:
@@ -352,7 +352,7 @@ def main():
         if resp.get("code") == 200 and resp.get("data"):
             d = resp["data"]
             risk_policy = d.get("riskPolicy")
-            if risk_policy == 1:
+            if risk_policy == 1 or risk_policy is None:
                 log("=" * 60)
                 log("🎉 下单成功!")
                 log("  订单号(orderNumber) : %s" % d.get("orderNumber"))
@@ -368,10 +368,11 @@ def main():
             else:
                 log("⚠ 假下单 (riskPolicy=%s, 被风控拦截): orderNumber=%s orderId=%s"
                     % (risk_policy, d.get("orderNumber"), d.get("orderId")))
-                continue  # 重试: 回到 scan_for_ticket
+                return
         elif resp.get("code") == 502:
             log("placeOrder 返回: %s" % json.dumps(resp, ensure_ascii=False)[:300])
             log("502 错误, 尝试手动点选验证码下单...")
+            time.sleep(random.uniform(0.5, 1.0))
             if manualOrder(session, ctx, host_ip=host_ip):
                 return  # manualOrder 成功
             # manualOrder 失败, 继续循环重试
