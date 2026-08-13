@@ -594,6 +594,23 @@ def _generate_uuid():
     return _uuid.uuid4().hex
 
 
+def ensure_uuid(openid=None):
+    """
+    确保设备 uuid 已生成 (登录后、首次 gainRealConfig 埋点前调用)。
+      - 已有 uuid: 直接返回;
+      - 无 uuid: 生成并落盘到账号文件 tdidState (mark_bound=False, 不写 boundAt,
+        待首次 type=0 成功再由 get_device_token 正式标记绑定)。
+    返回 uuid 字符串; 无 openid 时仍会生成 (供本次运行埋点使用) 但无法落盘。
+    """
+    if openid is None:
+        openid = _current_openid()
+    state = _load_state(openid)
+    if not state.get("uuid"):
+        state["uuid"] = _generate_uuid()
+        _save_state(state, openid=openid, mark_bound=False)
+    return state["uuid"]
+
+
 def _generate_req_id():
     return str(_uuid.uuid4())
 

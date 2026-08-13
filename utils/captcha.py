@@ -12,7 +12,6 @@ import base64
 import io
 import json
 import random
-import re
 import tkinter as tk
 
 import config as cfg
@@ -140,22 +139,19 @@ def build_point_json(points, secret_key):
       多点:  明文 = {"pointVOS":[{"x":px-10,"y":py-10}, ...]} (文字点选)
     然后 AES-128-ECB(secretKey) -> Base64。secret_key 为空则返回明文 (调试)。
 
-    坐标均添加 ±0.5px 随机偏差以模拟人工点击。
+    坐标在整数基准 (px-10) 上随机 +0.5 或 -0.5, 保留一位小数,
+    以模拟人工点击的轻微偏移 (如 {"x":113.5,"y":81.5})。
     """
     off = cfg.POINT_OFFSET
     px, py = points[0]
+    base_x = int(px - off)
+    base_y = int(py - off)
     plain_obj = {
-        "x": float(px - off) + random.uniform(-0.5, 0.5),
-        "y": float(py - off) + random.uniform(-0.5, 0.5),
+        "x": round(base_x + random.choice((-0.5, 0.5)), 1),
+        "y": round(base_y + random.choice((-0.5, 0.5)), 1),
     }
     plain = json.dumps(plain_obj, separators=(",", ":"), ensure_ascii=False)
-    # 统一浮点数精度为 15 位小数, 匹配小程序 JSON.stringify 的输出格式
-    plain = re.sub(
-        r"(?<=:)-?\d+\.\d+",
-        lambda m: format(float(m.group()), ".15f"),
-        plain,
-    )
-    print("pointJson 明文:", plain)
+    cfg.write_log("pointJson 明文: %s" % plain)
     if not secret_key:
         return plain
     return aes_ecb_b64(plain, secret_key)

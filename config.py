@@ -149,6 +149,22 @@ CAPTCHA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cache", 
 # ---- 登录信息落盘目录 (按账号主键 openid: cache/login/{openid}.json) ----
 LOGIN_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cache", "login")
 
+# ---- 日志落盘目录 (write_log/log 输出会同时写入 console 与当日文件) ----
+LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cache", "logs")
+
+
+def write_log(msg):
+    """打印到控制台, 并追加写入 cache/logs/log_YYYYMMDD.txt (自动建目录)。"""
+    line = "[%s] %s" % (time.strftime("%H:%M:%S"), msg)
+    print(line)
+    try:
+        os.makedirs(LOG_DIR, exist_ok=True)
+        with open(os.path.join(LOG_DIR, "log_%s.txt" % time.strftime("%Y%m%d")),
+                  "a", encoding="utf-8") as f:
+            f.write(line + "\n")
+    except Exception as e:
+        print("[config] 写入日志失败: %s" % e)
+
 # 当前活跃账号主键 openid (来自本地 accounts); 由 load_login() 设置, save_login() 使用
 ACTIVE_OPENID = ""
 
