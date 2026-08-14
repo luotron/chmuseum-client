@@ -9,6 +9,7 @@ import base64
 import json
 import os
 import random
+import re
 import threading
 import time
 from datetime import datetime
@@ -424,11 +425,65 @@ def is_in_time_range():
     
     return start_time <= current_time <= end_time
 
+def _date_sort_key(date_str):
+    """
+    把日期字符串 (如 "2026-08-14" / "2026/8/14") 归一化为整数 YYYYMMDD,
+    用于「日期最大」排序; 解析失败返回 0 (排最后)。
+    """
+    if not date_str:
+        return 0
+    s = str(date_str)
+    m = re.search(r"(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})", s)
+    if m:
+        return int(m.group(1)) * 10000 + int(m.group(2)) * 100 + int(m.group(3))
+    digits = re.sub(r"\D", "", s)
+    if len(digits) >= 8:
+        return int(digits[:8])
+    return 0
+
+
+def _schedule_time_key(sch):
+    """
+    从场次 dict 提取「开始时间」, 返回自午夜起的秒数用于「时间最大」排序;
+    取不到返回 -1 (排最后)。
+    优先取显式时间字段, 其次从 scheduleName/timeRange 文本里解析 HH:MM。
+    """
+    raw = None
+    for key in ("startTime", "beginTime", "scheduleStartTime", "useStartTime",
+                "startDateTime", "beginDateTime", "startDate", "beginDate",
+                "scheduleBeginTime", "openTime"):
+        v = sch.get(key)
+        if v not in (None, ""):
+            raw = str(v)
+            break
+    if raw is None:
+        raw = str(sch.get("scheduleName") or sch.get("timeRange") or "")
+    if not raw:
+        return -1
+
+    hh = mm = ss = None
+    # 完整日期时间: 2026-08-14 09:00:00 / 2026/08/14 09:00
+    m = re.search(r"(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})[ T](\d{1,2}):(\d{2})(?::(\d{2}))?", raw)
+    if m:
+        hh, mm, ss = int(m.group(4)), int(m.group(5)), int(m.group(6) or 0)
+    else:
+        # 纯时间: HH:MM / HH:MM:SS
+        m = re.search(r"(\d{1,2}):(\d{2})(?::(\d{2}))?", raw)
+        if m:
+            hh, mm, ss = int(m.group(1)), int(m.group(2)), int(m.group(3) or 0)
+    if hh is None:
+        return -1
+    if re.search(r"下午|午后|晚上|PM|pm", raw) and hh < 12:
+        hh += 12
+    return hh * 3600 + mm * 60 + ss
+
+
 def scan_for_ticket(session):
     """
-    轮询扫描余票。一旦发现某场次 ticketPool>0 且存在 priceId(余票>0),
-    立即返回锁定的上下文 dict:
-        { hallId, scheduleId, priceId, date, hallName, schedName, priceName }
+    轮询扫描余票。只要某场次存在 scheduleTicketPoolVOS (场次配置) 即视为可下单,
+    不必等 ticketPool>0; 但有余票 (ticketPool>0) 的场次优先选择; 在此基础上选择
+    日期最大、时间最大的场次。锁定后返回上下文 dict:
+        { hallId, scheduleId, priceId, date, hallName, schedName, priceName, ticketPool }
     否则持续轮询 (随机 1~2 秒间隔)。
     """
     log("开始监听余票 (随机 1~2 秒间隔)... 按 Ctrl+C 退出")
@@ -455,99 +510,127 @@ def scan_for_ticket(session):
             calendar_pools = data.get("calendarTicketPoolsByDate", []) or []
 
             found_any_hall = False
+            candidates = []
             for item in calendar_pools:
                 target_date = item.get("currentDate")
                 hall_vos = item.get("hallTicketPoolVOS")
                 if not hall_vos:
                     continue
                 found_any_hall = True
-
-                # 优先「基本陈列」(hallId==1): 把它排到最前, 有余票时优先锁定
-                hall_vos = sorted(
-                    hall_vos, key=lambda h: 0 if h.get("hallId") == 1 else 1
-                )
-
                 for hall in hall_vos:
                     hall_id = hall.get("hallId")
                     hall_name = hall.get("name", "未知展厅")
-
                     schedules = hall.get("scheduleTicketPoolVOS") or []
 
                     if is_in_time_range() and hall_id != 1:
                         continue
 
-                    # 多个场次都有余票时, 选择余票 (ticketPool) 最多的那个预约
-                    avail_schedules = [
-                        sch for sch in schedules
-                        if (sch.get("ticketPool", 0) or 0) > 0
-                    ]
-                    if not avail_schedules:
-                        continue
-                    sch = max(
-                        avail_schedules,
-                        key=lambda s: s.get("ticketPool", 0) or 0,
+                    for sch in schedules:
+                        if sch.get("hallScheduleId") is None:
+                            continue
+                        candidates.append({
+                            "date": target_date,
+                            "hallId": hall_id,
+                            "hallName": hall_name,
+                            "sch": sch,
+                            "pool": sch.get("ticketPool", 0) or 0,
+                        })
+
+            if not candidates:
+                if found_any_hall:
+                    print("[%s] 有展厅配置但暂无可下单场次..." % now_str, end="\r")
+                else:
+                    print("[%s] 扫描正常: hallTicketPoolVOS 均为 null" % now_str, end="\r")
+                time.sleep(random.uniform(1.0, 2.0))
+                continue
+
+            # 排序 (升序, 越小越优先):
+            #   1) 有余票 (ticketPool>0) 优先 —— 直接下单时仍优先选有票场次
+            #   2) 基本陈列 (hallId==1) 优先 (余票相同时)
+            #   3) 日期最大
+            #   4) 时间最大
+            candidates.sort(key=lambda c: (
+                0 if c["pool"] > 0 else 1,
+                0 if c["hallId"] == 1 else 1,
+                -_date_sort_key(c["date"]),
+                -_schedule_time_key(c["sch"]),
+            ))
+
+            # 按优先级依次尝试, 直到找到一个能查到有效 priceId 的场次。
+            for cand in candidates:
+                target_date = cand["date"]
+                hall_id = cand["hallId"]
+                hall_name = cand["hallName"]
+                sch = cand["sch"]
+                schedule_id = sch.get("hallScheduleId")
+                sch_name = sch.get("scheduleName") or sch.get("timeRange", "全天")
+                sch_pool = cand["pool"]
+
+                # 选择入馆日期 -> 点击个人预约
+                time.sleep(random.uniform(0.5, 1.0))
+                get_order_info_by_status(session)
+                # 滑动观众预约须知弹窗 -> 查 priceId
+                time.sleep(random.uniform(1.0, 2.0))
+                gain_user_contacter_list(session)
+                price_list = fetch_price_details(
+                    session, hall_id, schedule_id, target_date
+                )
+
+                # 选择票价: 有余票 (ticketPool>0) 的优先; 都没有余票时退回第一个
+                # 有效 priceId (直接下单, 不等 ticketPool>0)。
+                valid_prices = [
+                    p for p in price_list if p.get("priceId") is not None
+                ]
+                if not valid_prices:
+                    continue
+                avail_prices = [
+                    p for p in valid_prices if (p.get("ticketPool", 0) or 0) > 0
+                ]
+                chosen = avail_prices or valid_prices
+                p = max(chosen, key=lambda x: x.get("ticketPool", 0) or 0)
+                p_id = p.get("priceId")
+                p_pool = p.get("ticketPool", 0) or 0
+                p_name = p.get("priceName", "未知类型")
+
+                # ★ 锁定并停止扫描。avail 仅作日志展示,
+                #   实际下单 ticketNum 由 place_order 固定为 1。
+                avail = min(sch_pool, p_pool) if p_pool > 0 else 0
+                ctx = {
+                    "hallId": hall_id,
+                    "scheduleId": schedule_id,
+                    "priceId": p_id,
+                    "date": target_date,
+                    "hallName": hall_name,
+                    "schedName": sch_name,
+                    "priceName": p_name,
+                    "ticketPool": avail,
+                }
+
+                log("=" * 60)
+                log("🎉 发现可下单场次并锁定! 停止扫描")
+                log("   展厅: %s (hallId=%s)" % (hall_name, hall_id))
+                log("   场次: %s (scheduleId=%s) 余票=%d"
+                    % (sch_name, schedule_id, sch_pool))
+                log("   票价: %s (priceId=%s) 余票=%d"
+                    % (p_name, p_id, p_pool))
+                log("   日期: %s" % target_date)
+                log("=" * 60)
+                # 锁定后、下单前先校验带队(下单人)信息
+                time.sleep(random.uniform(1, 2))
+                check_leader_info(session, ctx)
+                # 用户标识初始化埋点 (后台线程, fire-and-forget)
+                tdid_state = tdid_client._load_state()
+                if tdid_state.get("uuid"):
+                    tdid_client.report_user_init_async(
+                        session, tdid_state["uuid"],
+                        os.environ.get("TDID_HOST_SIGN", ""),
                     )
-                    schedule_id = sch.get("hallScheduleId")
-                    sch_name = sch.get("scheduleName") or sch.get("timeRange", "全天")
-                    sch_pool = sch.get("ticketPool", 0) or 0
+                # 调极验 load (人机验证初始化, 与风控相关)
+                geetest_load(session)
+                return ctx
 
-                    # 选择入馆日期->点击个人预约
-                    time.sleep(random.uniform(0.5, 1.0))
-                    get_order_info_by_status(session)
-                    # 滑动观众预约须知弹窗 -> 查 priceId
-                    time.sleep(random.uniform(1.0, 2.0))
-                    gain_user_contacter_list(session)
-                    price_list = fetch_price_details(
-                        session, hall_id, schedule_id, target_date
-                    )
-                    for p in price_list:
-                        p_id = p.get("priceId")
-                        p_pool = p.get("ticketPool", 0) or 0
-                        p_name = p.get("priceName", "未知类型")
-                        if p_id is not None and p_pool > 0:
-                            # ★ 三者齐备, 立即锁定并停止扫描
-                            # ticketPool 取「场次余票」与「票价余票」的较小值,
-                            # 作为本次可下单的余票数量 (ticketNum)。
-                            avail = min(sch_pool, p_pool)
-                            ctx = {
-                                "hallId": hall_id,
-                                "scheduleId": schedule_id,
-                                "priceId": p_id,
-                                "date": target_date,
-                                "hallName": hall_name,
-                                "schedName": sch_name,
-                                "priceName": p_name,
-                                "ticketPool": avail,
-                            }
-
-                            log("=" * 60)
-                            log("🎉 发现余票并锁定! 停止扫描")
-                            log("   展厅: %s (hallId=%s)" % (hall_name, hall_id))
-                            log("   场次: %s (scheduleId=%s) 余票=%d"
-                                % (sch_name, schedule_id, sch_pool))
-                            log("   票价: %s (priceId=%s) 余票=%d"
-                                % (p_name, p_id, p_pool))
-                            log("   日期: %s" % target_date)
-                            log("=" * 60)
-                            # 锁定后、下单前先校验带队(下单人)信息
-                            time.sleep(random.uniform(1, 2))
-                            check_leader_info(session, ctx)
-                            # 用户标识初始化埋点 (后台线程, fire-and-forget)
-                            tdid_state = tdid_client._load_state()
-                            if tdid_state.get("uuid"):
-                                tdid_client.report_user_init_async(
-                                    session, tdid_state["uuid"],
-                                    os.environ.get("TDID_HOST_SIGN", ""),
-                                )
-                            # 调极验 load (人机验证初始化, 与风控相关)
-                            geetest_load(session)
-                            return ctx
-
-            if found_any_hall:
-                print("[%s] 有展厅配置但暂无可下单余票..." % now_str, end="\r")
-            else:
-                print("[%s] 扫描正常: hallTicketPoolVOS 均为 null" % now_str, end="\r")
-
+            # 所有候选都没查到有效 priceId
+            print("[%s] 有展厅配置但暂无可下单余票..." % now_str, end="\r")
             time.sleep(random.uniform(1.0, 2.0))
 
         except Exception as e:
