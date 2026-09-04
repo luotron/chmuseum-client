@@ -209,7 +209,7 @@ def main():
         "https": PROXY,
     }
     
-    session = cycronet.CronetClient(chrometls="chrome_133", verify=False, proxies=proxies) if PROXY_ENABLE and PROXY else cycronet.CronetClient(chrometls="chrome_133", verify=False)
+    session = cycronet.CronetClient(verify=False, proxies=proxies) if PROXY_ENABLE and PROXY else cycronet.CronetClient(chrometls="chrome_133", verify=False)
 
     # ★ 引导: 本地服务/账号/登录 -> 加载登录态到 config
     openid = bootstrap_account(session)
@@ -366,9 +366,9 @@ def main():
                 log("=" * 60)
                 return  # 成功, 终止程序
             else:
-                log("⚠ 假下单 (riskPolicy=%s, 被风控拦截): orderNumber=%s orderId=%s"
-                    % (risk_policy, d.get("orderNumber"), d.get("orderId")))
-                return
+                log("⚠ riskPolicy=%s, 被风控拦截: orderNumber=%s orderId=%s prompt=%s"
+                    % (risk_policy, d.get("orderNumber"), d.get("orderId"), d.get("prompt")))
+                continue  # 重试: 回到 scan_for_ticket
         elif resp.get("code") == 502:
             log("placeOrder 返回: %s" % json.dumps(resp, ensure_ascii=False)[:300])
             log("502 错误, 尝试手动点选验证码下单...")
