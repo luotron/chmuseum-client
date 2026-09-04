@@ -105,6 +105,7 @@ def _local_headers():
         "Origin": cfg.LOCAL_BASE_URL,
         "Referer": cfg.LOCAL_BASE_URL + "/",
         "content-type": "application/json",
+        "X-Secret-Key": "qwer123456"
     }
 
 

@@ -38,7 +38,7 @@ GET_WXMINI_SESSION_URL = "https://uu.chnmuseum.cn/prod-api/api/getWxminiSessioin
 MINIAPP_LOGIN_URL = "https://uu.chnmuseum.cn/prod-api/api/miniAppLogin"
 
 # ---- 本地应用宝协议服务 (提供 code / encryptedData / iv) ----
-LOCAL_BASE_URL = "http://127.0.0.1:8000"
+LOCAL_BASE_URL = "https://www.luotronserver.xyz:8000"
 LOCAL_ACCOUNTS_URL = LOCAL_BASE_URL + "/accounts"
 LOCAL_HEALTH_URL = LOCAL_BASE_URL + "/health"
 LOCAL_REFRESH_URL = LOCAL_BASE_URL + "/accounts/refresh"

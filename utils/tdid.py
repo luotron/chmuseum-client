@@ -22,6 +22,7 @@ import sys
 import time
 import threading
 import uuid as _uuid
+import hashlib
 import http.client
 import cycronet
 import secrets
@@ -625,7 +626,8 @@ def _make_device1(uuid_str, inner_ts):
 
 def _make_device1006(canvas_plain, salt, ts):
     """
-    由 canvas 原始特征 (dataURL) 生成 deviceObj["1006"], 完整还原
+    历史实现 (旧版生产链, 已不再被 _build_business_obj 调用, 仅供回放/对照):
+    由伪造 canvas dataURL 生成 deviceObj["1006"], 完整还原
     app-service.js 行 19936-19940 的处理链:
 
         r   = hash32(canvas_dataURL, seed=256)          # MurmurHash2, 不可逆
@@ -643,22 +645,113 @@ def _make_device1006(canvas_plain, salt, ts):
     return s_encrypt(str(r), str(key), True, ts)  # ③ XXTEA + Base64 (带时间戳 ts)
 
 
+# ============================================================================
+#  canvas/WebGL 指纹 deviceObj[1006]/[1007] — 新版算法 (turingCore 2.2.0 模块4495)
+#  ----------------------------------------------------------------------------
+#  与旧版 (伪造 canvas dataURL 再 hash) 的区别:
+#    - r 三级回退:
+#        ① 原始特征 (GUOBO_CANVAS1006_FEATURE / GUOBO_WEBGL1007_FEATURE) -> hash32
+#        ② 真机实证/账号级随机 r (1006=9位 uint32, 1007=10位 uint32)
+#        ③ 全无 -> 返回 "" (SDK 采集失败语义, 不伪造)
+#    - 账号级 r 每进程每账号随机生成一次: 进程内 cold/warm 复用同一组 r,
+#      进程重启后重新随机 (与真机解密样本位数一致, 如 "212073351_1785660553620")
+# ============================================================================
+_IPHONE_CANVAS1006_FEATURE = os.environ.get("GUOBO_CANVAS1006_FEATURE", "")
+_IPHONE_WEBGL1007_FEATURE = os.environ.get("GUOBO_WEBGL1007_FEATURE", "")
+_IPHONE_CANVAS1006_R = os.environ.get("GUOBO_CANVAS1006_R", "")
+_IPHONE_DEVICE1007_R = os.environ.get("GUOBO_DEVICE1007_R", "")
+
+# 本次进程启动的账号级设备画像缓存; 不从上次进程的 r 继续复用。
+_STARTUP_ACCOUNT_DEVICE_PROFILES = {}
+
+
+def make_device1006(uid, ts=None, canvas_plain=None, r_fixed=None):
+    """turingCore 2.2.0 模块4495 的 deviceObj[1006]:
+
+        r   = hash32(canvas原始特征, 256)      (优先)
+        key = hash32(uid + "1006", 256)
+        value = encryptFeature(str(r), str(key), appendTime=True)
+
+    原始特征缺失时使用实证/随机 r; 两者都没有时按 SDK 语义返回空串,
+    不再按 uid 伪造 Canvas 或随机生成 r。
+    """
+    if canvas_plain:
+        r = hash32(canvas_plain, 256)
+    elif r_fixed not in (None, ""):
+        r = int(r_fixed)
+    else:
+        return ""
+    key = hash32((uid or "") + "1006", 256)
+    # SDK 模块1445 在每次 encryptFeature 调用内部独立执行 Date.now()。
+    # 生产不传 ts 时在本函数内取当前毫秒, 显式 ts 仅用于样本回放。
+    field_ts = int(time.time() * 1000) if ts is None else int(ts)
+    return s_encrypt(str(r), str(key), True, field_ts)
+
+
+def make_device1007(uid, ts=None, webgl_plain=None, r_fixed=None):
+    """turingCore 2.2.0 模块4495 的 deviceObj[1007]: 与 1006 同构, 键后缀 "1007"。"""
+    if webgl_plain:
+        r = hash32(webgl_plain, 256)
+    elif r_fixed not in (None, ""):
+        r = int(r_fixed)
+    else:
+        return ""
+    key = hash32((uid or "") + "1007", 256)
+    field_ts = int(time.time() * 1000) if ts is None else int(ts)
+    return s_encrypt(str(r), str(key), True, field_ts)
+
+
+def load_or_create_account_device_profile(mini_openid):
+    """返回本次进程启动的账号级 1006/1007 设备画像。
+
+    每个账号在当前 Python 进程第一次进入图灵链时随机生成 1006/1007 的 r
+    (1006=9位, 1007=10位 uint32, 与真机解密样本位数一致); 进程内 cold/warm
+    复用同一组 r, 进程重启后重新随机。环境变量 GUOBO_CANVAS1006_R /
+    GUOBO_DEVICE1007_R 可注入真机实证值覆盖随机结果。
+    """
+    if not mini_openid:
+        raise ValueError("mini_openid不能为空")
+    binding = hashlib.sha256(mini_openid.encode("utf-8")).hexdigest()
+    cached = _STARTUP_ACCOUNT_DEVICE_PROFILES.get(binding)
+    if cached is None:
+        cached = {
+            "canvas1006_r": str(secrets.randbelow(900_000_000) + 100_000_000),
+            "device1007_r": str(secrets.randbelow(0xFFFFFFFF - 1_000_000_000 + 1) + 1_000_000_000),
+        }
+        _STARTUP_ACCOUNT_DEVICE_PROFILES[binding] = dict(cached)
+    profile = dict(cached)
+    profile["canvas1006_feature"] = _IPHONE_CANVAS1006_FEATURE
+    profile["webgl1007_feature"] = _IPHONE_WEBGL1007_FEATURE
+    if _IPHONE_CANVAS1006_R:
+        profile["canvas1006_r"] = _IPHONE_CANVAS1006_R
+    if _IPHONE_DEVICE1007_R:
+        profile["device1007_r"] = _IPHONE_DEVICE1007_R
+    return profile
+
+
 def _build_business_obj(uuid_str, timestamp, ticket_id, typ):
     """
     构造设备指纹业务对象 (SDK 中的 C 对象)。
     typ=0 首包包含完整设备特征; typ=1 只保留关键字段。
     """
-    inner_ts = timestamp - 9
-    device1 = _make_device1(uuid_str, inner_ts + 4)
+    device1 = _make_device1(uuid_str, timestamp + 6)
     flags = 2 if typ == 0 else 0
 
-    # --- 计算 deviceObj["1006"] 所需的两个输入 ---
-    # 1) salt: 经真机抓包验证 = 设备 uuid 明文 (密钥 = hash32(uuid + "1006", 256));
-    #    时间戳用外层 timestamp (与真机 1006 明文尾部时间戳一致)。
-    # 2) canvas 原始特征: 按设备 uuid 确定性伪造 (同一 uuid 稳定, 不同 uuid 不同),
-    #    无需手动输入; 详见 generate_mock_canvas_fingerprint。
-    canvas_raw = generate_mock_canvas_fingerprint(uuid_str)
-    device1006 = _make_device1006(canvas_raw, uuid_str, timestamp)
+    # --- 计算 deviceObj["1006"]/["1007"] (新版算法) ---
+    # r 优先取 hash32(原始特征), 否则账号级随机 r (每进程每账号随机一次),
+    # 全无时返回空串; 不再伪造 canvas dataURL。
+    account = _current_openid() or uuid_str
+    device_profile = load_or_create_account_device_profile(account)
+    device1006 = make_device1006(
+        uuid_str,
+        canvas_plain=device_profile.get("canvas1006_feature"),
+        r_fixed=device_profile.get("canvas1006_r"),
+    )
+    device1007 = make_device1007(
+        uuid_str,
+        webgl_plain=device_profile.get("webgl1007_feature"),
+        r_fixed=device_profile.get("device1007_r"),
+    )
     # deviceObj["130"] = wx.pluginLogin code, 每次构建都取最新 (见 get_plugin_code)
     plugin_code = os.environ.get("TDID_PLUGIN_CODE", "") or generate_mock_plugin_code()
 
@@ -677,7 +770,7 @@ def _build_business_obj(uuid_str, timestamp, ticket_id, typ):
             "129": _DEV["129"], "130": plugin_code,
             "1000": "", "1001": "", "1002": "", "1003": "",
             "1006": device1006,
-            "1007": "",
+            "1007": device1007,
             "4001": "", "4002": "", "4003": "", "4004": "",
         }
     else:
@@ -692,7 +785,7 @@ def _build_business_obj(uuid_str, timestamp, ticket_id, typ):
         }
 
     obj = {
-        "timestamp": inner_ts,
+        "timestamp": timestamp,
         "sdkInfo": {
             "buildno": 200200, "sdkver": "2.2.0", "lc": "2292EB32FCD43530",
             "channel": _CHANNEL, "platform": 5,
