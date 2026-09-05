@@ -504,6 +504,17 @@ ENV = cfg.ENV
 _DEV = _build_dev()
 
 
+def refresh_device_profile():
+    """
+    账号登录态加载完成后调用 (cfg.load_login 之后): 刷新设备指纹的 101(openid) 字段。
+
+    背景: tdid 模块 import 时即构建 _DEV, 彼时 cfg.OPENID 尚未加载 (为空),
+    导致 deviceObj["101"] 一直是空串; 故需在账号加载完成后刷新一次。
+    """
+    global _DEV
+    _DEV["101"] = cfg.OPENID
+
+
 def _read_login_record(openid=None):
     """读取账号文件 cache/login/{openid}.json 的完整 JSON; 不存在/失败返回 None。"""
     if openid is None:
@@ -770,7 +781,7 @@ def _build_business_obj(uuid_str, timestamp, ticket_id, typ):
             "129": _DEV["129"], "130": plugin_code,
             "1000": "", "1001": "", "1002": "", "1003": "",
             "1006": device1006,
-            "1007": device1007,
+            "1007": "",
             "4001": "", "4002": "", "4003": "", "4004": "",
         }
     else:

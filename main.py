@@ -49,6 +49,7 @@ import config as cfg
 import login as login_mod
 from utils.captcha import CaptchaPicker, build_point_json
 from utils.captcha_auto import auto_recognize_captcha
+from utils import tdid as tdid_client
 from api import log
 
 def manualOrder(session, ctx, host_ip=None):
@@ -193,6 +194,12 @@ def bootstrap_account(session):
     if not cfg.load_login(openid):
         log("❌ 加载账号 openid=%s 登录信息失败 (缺少 apiToken), 退出。" % openid)
         return None
+
+    # 5.1) 账号 openid 已加载 -> 刷新设备指纹 101 字段 (tdid import 时 101 尚为空)
+    try:
+        tdid_client.refresh_device_profile()
+    except Exception as e:
+        log("⚠ 刷新设备指纹 101 字段失败: %s" % e)
     return openid
 
 
@@ -201,7 +208,7 @@ def main():
     # cfg.install_cookie_logger()
     
     # 是否开启抓包
-    PROXY_ENABLE = False  # True/False
+    PROXY_ENABLE = True  # True/False
     # 替换为你小黄鸟监听的真实 IP 和端口
     PROXY = "http://192.168.124.14:9000"
     proxies = {
