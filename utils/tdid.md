@@ -154,7 +154,7 @@ statisticsInfo["11"] = 随机 UUID（reqId）
 | `"127"` | `"20260715"` | 系统构建日期（YYYYMMDD） |
 | `"128"` | `"198.18.0.1"` | 设备 IP 地址（内网保留地址） |
 | `"129"` | `"release"` | 构建类型（release / debug） |
-| `"130"` | `"4ecfb0c75f2767522744b9ddd683989f765a189ee9391b8338ba0f3dcec7b89e"` | 设备唯一标识哈希（可能是硬件指纹的 SHA-256） |
+| `"130"` | `"4ecfb0c75f2767522744b9ddd683989f765a189ee9391b8338ba0f3dcec7b89e"` | wx.pluginLogin登录code临时凭证 |
 
 > 注：这些字段值来自 `tdid_client.js` 的 `DEV` 表，是 SDK 为 Windows 平台预设的静态值。实际抓包中，服务端会结合这些字段与动态的 `deviceObj["1"]`、`deviceObj["2"]` 等生成设备指纹。
 

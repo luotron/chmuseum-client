@@ -493,9 +493,39 @@ def _current_openid():
         return ""
 
 
+def _detect_local_ip():
+    """
+    获取本机局域网 IP, 复刻 SDK 里 wx.getLocalIPAddress 的取值语义
+    (deviceObj["128"])。
+
+    真机实证: 微信 PC 端上报的 128 与 `gethostbyname(主机名)` 的第一个 IPv4
+    完全一致 —— VPN/TUN 类软件会把主机名注册到自己虚拟网卡地址上 (如 vgate0
+    注册后主机名解析即 172.30.226.31), 而 UDP connect 走默认路由出口会取到
+    物理网卡 IP, 两者不同。
+    """
+    import socket
+    try:
+        ip = socket.gethostbyname(socket.gethostname())
+        if ip and not ip.startswith("127.") and ip != "0.0.0.0":
+            return ip
+    except Exception:
+        pass
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect(("114.114.114.114", 80))
+        return s.getsockname()[0]
+    except Exception:
+        return ""
+    finally:
+        s.close()
+
+
 def _build_dev():
     dev = cfg.get_device_profile()
     dev["101"] = cfg.OPENID
+    # deviceObj["128"] 改为真实网卡 IP (wx.getLocalIPAddress 语义), 检测失败退回静态值
+    dev["128"] = _detect_local_ip() or dev["128"]
+    print(dev)
     return dev
 
 
@@ -506,13 +536,16 @@ _DEV = _build_dev()
 
 def refresh_device_profile():
     """
-    账号登录态加载完成后调用 (cfg.load_login 之后): 刷新设备指纹的 101(openid) 字段。
+    账号登录态加载完成后调用 (cfg.load_login 之后): 刷新设备指纹的 101(openid)
+    与 128(本机 IP) 字段。
 
     背景: tdid 模块 import 时即构建 _DEV, 彼时 cfg.OPENID 尚未加载 (为空),
     导致 deviceObj["101"] 一直是空串; 故需在账号加载完成后刷新一次。
+    128 同样在此重新探测一次, 以反映运行时的真实网卡 IP。
     """
     global _DEV
     _DEV["101"] = cfg.OPENID
+    _DEV["128"] = _detect_local_ip() or _DEV["128"]
 
 
 def _read_login_record(openid=None):
