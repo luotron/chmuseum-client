@@ -420,7 +420,7 @@ def is_in_time_range():
     current_time = now.time()
     
     # 设置起始和结束时间
-    start_time = datetime.strptime("17:00:00", "%H:%M:%S").time()
+    start_time = datetime.strptime("16:55:00", "%H:%M:%S").time()
     end_time = datetime.strptime("17:55:00", "%H:%M:%S").time()
     
     return start_time <= current_time <= end_time
