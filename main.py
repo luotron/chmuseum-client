@@ -210,7 +210,7 @@ def main():
     # 是否开启抓包
     PROXY_ENABLE = False  # True/False
     # 替换为你小黄鸟监听的真实 IP 和端口
-    PROXY = "http://192.168.0.245:9000"
+    PROXY = "http://192.168.124.14:9000"
     proxies = {
         "http": PROXY,
         "https": PROXY,

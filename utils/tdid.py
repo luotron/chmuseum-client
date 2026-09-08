@@ -525,7 +525,6 @@ def _build_dev():
     dev["101"] = cfg.OPENID
     # deviceObj["128"] 改为真实网卡 IP (wx.getLocalIPAddress 语义), 检测失败退回静态值
     dev["128"] = _detect_local_ip() or dev["128"]
-    print(dev)
     return dev
 
 
@@ -546,6 +545,7 @@ def refresh_device_profile():
     global _DEV
     _DEV["101"] = cfg.OPENID
     _DEV["128"] = _detect_local_ip() or _DEV["128"]
+    print("刷新设备指纹 _DEV:", _DEV)
 
 
 def _read_login_record(openid=None):
