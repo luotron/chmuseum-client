@@ -108,6 +108,60 @@ ORDER_USER_NAME = "你的姓名"
 ORDER_CERT_INFO = "你的身份证号"
 ```
 
+## 代理加速抢票模式 (查票与下单分离, 星空代理 xkdaili)
+
+票务数据接口 (`gainAllSystemConfig` / `getPriceByScheduleId`, 均为 `.../ingore/...` 免鉴权接口)
+**不需要登录 / 不需要 Cookie / 不需要 token** —— 查票线程组拿着动态代理池高频轮询，
+放票瞬间（如 17:00:00 主波 + 17:00:10 第二波）几百毫秒内发现场次并推送下单线程。
+
+架构（都是后台自动，不需要命令行参数，IDE 直接运行 `main.py`）：
+
+```
+[查票线程组]  N 路代理并发轮询余票 (每个线程持 1 个代理, 背靠背狂刷)
+              ├─ 代理读不到数据/被墙/超时 -> 丢弃换下一个 (池子自动续拉)
+              ├─ 代理 3 分钟到期 -> 自动换新
+              ├─ 池中闲置代理 < 120 -> 一次再拉 200 个, 用完继续拉
+              └─ 代理断供时本地兜底线程顶上 (查票永不中断)
+                 │  场次出现/消失/换场/放票(>0) 变化
+                 ▼  epoch+1 推送 ctx
+[下单线程]   主线程: 预热 Host-Ip/deviceToken -> getBlock + 验证码 + placeOrder
+              同一场次状态内连续热抢; 场次被抢空/换场则立即切换最新场次
+```
+
+只需要修改 `config.py` 顶部的常量（全部有中文注释）：
+- `XKD_APIKEY / XKD_SIGN`：代理账号（已填好）
+- `XKD_FETCH_QTY = 200`：每次提取数量（一次性 200，接口上限）
+- `XKD_SCAN_WORKERS = 40`：查票并发线程数（每个线程持 1 个代理轮询）。
+  实际查票频率 ≈ 并发数 ÷ 单次往返耗时；40 路实测约 **50~60 次/秒**
+  （远超 7~8 次/秒要求）。心跳日志每 20 秒打印「查票频率≈x.x 次/秒」，
+  低于 `XKD_MIN_RPS = 8` 会红字提醒 —— 不够快就把 `XKD_SCAN_WORKERS` 调大
+- `XKD_POOL_LOW = 120 / XKD_POOL_HIGH = 200 / XKD_INITIAL_FILL = 200`：
+  池子水位与补货节奏（代理被墙自动换新，闲置低于 120 自动再拉 200）
+- `XKD_POLL_INTERVAL = (0.0, 0.15)`：每个代理轮询间隔 ≈ 0，背靠背狂刷
+- `TARGET_DATE = ""`：填 `"2026-09-15"` 只抢该日期；留空自动（日期最大）
+- `ORDER_WINDOW = ("16:50:00", "18:00:00")`：只在该时段内下单，之前只查票
+
+关键机制：
+
+1. **Host-Ip 预加密**：下单头 `Host-Ip = AES-128-ECB(出口IP, "AyrKJRXPO3nR5Abc")`，
+   出口 IP 由腾讯校时 `checktime` 返回。本机下单路径在 `api.ensure_host_ip()`
+   里**启动即预热并缓存 120s**，放票瞬间 0 等待（查票走代理不需要 Host-Ip）。
+2. **deviceToken 预热**：`start_device_token_refresher()` 后台每 20s 刷新，
+   placeOrder 不再现场等 TDID。
+3. **查票/下单分离**：查票线程永远在后台跑，不会因验证码弹窗或下单重试停摆；
+   场次状态一变立刻切换下单目标（17:00:10 第二波=场次状态变化，自动重开抢）。
+4. **getBlock 秒刷抢票（关键）**：没票时 getBlock 拿不到验证码（返回 550 余票不足）。
+   下单线程对已武装的目标场次 **用 getBlock 自己秒刷**：550 余票不足 → 重刷等 200，
+   200 → 说明此刻有票，马上识别验证码并 placeOrder —— 放票瞬间 550→200 翻转立即抢。
+   ⚠ 实测限频：getBlock **每 2 秒内连发就会返回「访问太频繁，请稍后再试」**
+   （同样是 code550，但 msg 不同），同秒连发会升级成 HTTP 491 WAF 封锁。
+   因此程序内置：两次 getBlock 最小间隔 `HOT_MIN_GETBLOCK_GAP = 3.5s`；
+   区分「550余票不足」与「550访问太频繁」，后者自动退避 `HOT_FREQ_BACKOFF`、
+   WAF/491 自动退避 `HOT_BLOCK_BACKOFF`，不会硬刷把 IP 打封。
+   相关参数：`HOT_MIN_GETBLOCK_GAP / HOT_EMPTY_GAP / HOT_EMPTY_CAP /
+   HOT_FREQ_BACKOFF / HOT_BLOCK_BACKOFF`（配套 `test_getblock_rate.py` 可自行复测频率墙）。
+5. **代理换血**：每次提取 200 个；代理被墙/慢/超时直接换；到期自动续拉。
+
 ## 注意事项
 
 1. **API Token有效期**：API Token有有效期限制，过期后需要重新获取

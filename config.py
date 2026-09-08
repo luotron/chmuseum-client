@@ -38,7 +38,7 @@ GET_WXMINI_SESSION_URL = "https://uu.chnmuseum.cn/prod-api/api/getWxminiSessioin
 MINIAPP_LOGIN_URL = "https://uu.chnmuseum.cn/prod-api/api/miniAppLogin"
 
 # ---- 本地应用宝协议服务 (提供 code / encryptedData / iv) ----
-LOCAL_BASE_URL = "https://www.luotronserver.xyz:8000"
+LOCAL_BASE_URL = "http://127.0.0.1:8000"
 LOCAL_ACCOUNTS_URL = LOCAL_BASE_URL + "/accounts"
 LOCAL_HEALTH_URL = LOCAL_BASE_URL + "/health"
 LOCAL_REFRESH_URL = LOCAL_BASE_URL + "/accounts/refresh"
@@ -128,6 +128,78 @@ PLATFORM = 2                      # 非扫码
 
 
 # ============================================================================
+#  查票代理池 (星空代理 xkdaili) —— 查票(只读余票)与下单(placeOrder)完全分离:
+# ----------------------------------------------------------------------------
+#  查票: N 个后台线程, 各持一个动态代理, 高频轮询免登录的余票接口
+#        (.../ingore/gainAllSystemConfig, .../getPriceByScheduleId 无需token)。
+#        代理被墙/超时/返回异常/到期(3分钟) -> 立即丢弃, 换下一个;
+#        池子低于 XKD_POOL_LOW 就批量再提取(每次最多 200), 用完继续拉。
+#  实际每秒查票次数 ≈ 并发线程数 ÷ 单次往返耗时(约0.3~1.5s):
+#        XKD_SCAN_WORKERS=40 时通常 30~100+ 次/秒 (远超 7~8 次/秒)。
+#        心跳日志会实时打印「查票频率 x.x 次/秒」, 不够快就把 XKD_SCAN_WORKERS 调大。
+#  下单: 走本机 IP (账号/TDID/极验 hostSign 都绑定本机微信环境), 与查票线程互不影响。
+#  ★ 以下全部是常量配置, IDE 里直接运行 main.py 即可, 不需要任何命令行参数。
+# ============================================================================
+XKD_APIKEY = "XKDCEA4C13A09482DE84"
+XKD_SIGN = "dfc3ec85c57f60a621b1cded07033fa2"
+XKD_API_URLS = [
+    "http://api2.xkdaili.com/tools/XApi.ashx",
+    "http://api1.xkdaili.com/tools/XApi.ashx",
+]
+# 每次调用提取 API 一次性拉 200 个 (接口单次上限 200)
+XKD_FETCH_QTY = 200
+# 池中闲置代理低于该数 -> 补货线程再拉一批; 单批最多补到 HIGH。
+# 注意: 并发线程会从池里拿走代理, LOW 要留足余量, 否则查票会等代理。
+XKD_POOL_LOW = 120
+XKD_POOL_HIGH = 200
+# 启动时先拉满 200 让查票立刻全速 (之后按水位自动续拉)
+XKD_INITIAL_FILL = 200
+# 查票并发线程数 = 同时在用的代理数 (每个线程持 1 个代理轮询)。
+# 票是秒空的, 尽量大; 觉得快不够就把这个数往上加 (50/80/100 都行)。
+XKD_SCAN_WORKERS = 40
+# 每个代理两次轮询之间的随机间隔(秒): (0,0.15)=背靠背狂刷, 基本不额外等待
+XKD_POLL_INTERVAL = (0.0, 0.15)
+XKD_POLL_TIMEOUT = 5            # 单次余票请求超时(秒), 代理不通快速换下一个
+# 心跳里提醒的「每秒查票次数」下限 (低于会提示调大 XKD_SCAN_WORKERS)
+XKD_MIN_RPS = 8
+XKD_EXTRACT_GAP = 1.5           # 两次调用提取 API 的最小间隔(秒), 避免 406
+XKD_REFILL_EVERY = 8            # 补货线程轮询周期(秒)
+XKD_PROXY_LIFETIME = 150        # 单个代理最长持有秒数(实际 3 分钟到期)
+XKD_EXTRACT_LIMIT = 200         # 提取 API 单次 qty 上限
+
+# ---- 查票目标 (直接改这里; 留空 = 自动, 与旧版一致: 日期最大+时间最大) ----
+TARGET_DATE = "2026-09-10"                # 例如 "2026-09-15"
+TARGET_HALL_IDS = (1,)          # 只查基本陈列
+TARGET_SCHEDULE_IDS = ()        # 空 = 该展厅全部场次
+
+
+# ============================================================================
+#  下单热路径参数 (放票瞬间争抢用)
+# ----------------------------------------------------------------------------
+#  查票线程一旦发现「场次状态变化(上架/放票/第二波)」就推送一个新 ctx,
+#  下单线程用预热的 Host-Ip / deviceToken 立即 getBlock+placeOrder, 命中即停。
+# ============================================================================
+CHECKTIME_TTL = 3                # checktime 校时结果缓存秒数 (nonce 时间戳用)
+HOST_IP_TTL = 120                # Host-Ip (AES(本机出口IP)) 缓存秒数, 放票前预热
+DEVICE_TOKEN_TTL = 20            # deviceToken 后台刷新周期(秒), 保持热路径零等待
+HOT_MAX_ATTEMPTS = 20            # 拿到验证码后的下单尝试次数上限(防死循环)
+HOT_BACKOFF = (0.3, 0.8)         # 下单被风控/满员后, 到下一次的额外间隔
+# ★ 实测结论 (test_getblock_rate.py): getBlock 安全节奏约每 3~4 秒一次;
+#   2 秒内连发会返回 HTTP200+code550「访问太频繁,请稍后再试」,
+#   同秒连发会升级成 HTTP 491 (WAF 封锁, 冷却更久)。相关参数:
+HOT_MIN_GETBLOCK_GAP = 3.5       # 两次 getBlock 的最小间隔(秒), 硬下限
+HOT_EMPTY_GAP = (3.2, 3.8)       # 「550余票不足(真没票)」时的重刷间隔
+HOT_FREQ_BACKOFF = (5.0, 7.0)    # 命中「访问太频繁」后退避秒数
+HOT_BLOCK_BACKOFF = (12.0, 18.0) # 命中 WAF/HTTP 封锁(491/非JSON)后的退避秒数
+HOT_EMPTY_CAP = 60               # 连续没票(真550)达到该次数就停手等下一波
+# 下单时间窗: 默认不限制 —— 只要查票线程发现可下单场次, 就自动 getBlock->验证码->提交订单。
+# 若想只在放票时段开抢可改: ORDER_WINDOW = ("16:50:00", "18:00:00")
+ORDER_WINDOW = ("", "")          # 留空 = 任何时间查到有票就自动下单
+LOCAL_SCAN_BACKUP = True         # 代理彻底不可用(如配额耗尽)时退回本地轮询
+LOCAL_POLL_INTERVAL = (0.4, 0.9) # 本地轮询间隔
+
+
+# ============================================================================
 #  登录态字段 (统一由 cache/login 管理, 不再硬编码)
 # ----------------------------------------------------------------------------
 #  以下均为「运行时内存变量」, 默认全空:
@@ -156,7 +228,7 @@ LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cache", "log
 def write_log(msg):
     """打印到控制台, 并追加写入 cache/logs/log_YYYYMMDD.txt (自动建目录)。"""
     line = "[%s] %s" % (time.strftime("%H:%M:%S"), msg)
-    print(line)
+    print(line, flush=True)
     try:
         os.makedirs(LOG_DIR, exist_ok=True)
         with open(os.path.join(LOG_DIR, "log_%s.txt" % time.strftime("%Y%m%d")),
@@ -325,6 +397,23 @@ def build_headers(host_ip=None):
         "content-type": "application/json",
         "Host-Ip": host_ip if host_ip else "",
         "Authorization": "Bearer " + API_TOKEN,
+        "charset": "utf-8",
+        "Referer": "https://servicewechat.com/wx9e2927dd595b0473/100/page-frame.html",
+    }
+
+
+def build_headers_anon(host_ip=None):
+    """
+    无登录态请求头 (抢票数据轮询用, 接口为 .../ingore/... 免鉴权)。
+    与 build_headers 完全一致, 但不带 Authorization, 避免账号 token 出现在代理出口。
+    """
+    return {
+        "User-Agent": UA,
+        "Connection": "keep-alive",
+        "Accept": "application/json",
+        "xweb_xhr": "1",
+        "content-type": "application/json",
+        "Host-Ip": host_ip if host_ip else "",
         "charset": "utf-8",
         "Referer": "https://servicewechat.com/wx9e2927dd595b0473/100/page-frame.html",
     }

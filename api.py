@@ -125,12 +125,12 @@ def fetch_server_time_ip(session):
     """
     腾讯校时: GET checktime。返回 (t_秒, ip)。
       t 失败退回本地时间; ip 失败返回 None。
-    结果缓存 3 秒, 避免 getBlock 前 build_host_ip 和 getBlock 内 build_nonce
+    结果缓存 CHECKTIME_TTL 秒, 避免 getBlock 前 build_host_ip 和 getBlock 内 build_nonce
     重复请求同一接口。
     """
     global _checktime_cache
     now = time.time()
-    if now - _checktime_cache["ts"] < 3:
+    if now - _checktime_cache["ts"] < cfg.CHECKTIME_TTL:
         return _checktime_cache["t"], _checktime_cache["ip"]
     try:
         resp = session.get(cfg.CHECKTIME_URL, headers=cfg.build_headers(), timeout=5)
@@ -172,7 +172,30 @@ def build_host_ip(session, scan=False):
     key = cfg.HOST_IP_KEY_SCAN if scan else cfg.HOST_IP_KEY
     host_ip = aes_ecb_b64(ip, key)
     log("checktime ip=%s -> Host-Ip=%s" % (ip, host_ip))
+    _host_ip_cache["host_ip"] = host_ip
+    _host_ip_cache["ts"] = time.time()
     return host_ip
+
+
+# ---- Host-Ip 缓存: 放票前预热一次, 热路径下单时 0 等待 ----
+_host_ip_cache = {"host_ip": "", "ts": 0}
+
+
+def ensure_host_ip(session, force=False):
+    """
+    返回已缓存的 Host-Ip; 未缓存 / 超过 HOST_IP_TTL / force=True 时现算并缓存。
+    热路径(争抢放票)前调用一次即可, 之后 placeOrder 无需再等 checktime。
+    """
+    now = time.time()
+    if (not force and _host_ip_cache["host_ip"]
+            and now - _host_ip_cache["ts"] < cfg.HOST_IP_TTL):
+        return _host_ip_cache["host_ip"]
+    return build_host_ip(session)
+
+
+def get_cached_host_ip():
+    """读取当前缓存 Host-Ip (可能为空串)。"""
+    return _host_ip_cache["host_ip"]
 
 
 
@@ -799,6 +822,74 @@ def get_device_token(session: cycronet.CronetClient):
         return r["deviceToken"]
     log("deviceToken 获取失败: ret=%s error=%s" % (r.get("ret"), r.get("error")))
     return None
+
+
+# ---- deviceToken 后台预热: 放票前开始每 DEVICE_TOKEN_TTL 秒刷新一次, ----
+#      热路径 placeOrder 时直接命中缓存, 省掉一次 ~0.5~1.5s 的 TDID 请求。
+_device_token_cache = {"token": None, "ts": 0, "lock": threading.RLock(),
+                       "thread": None, "busy": False}
+
+
+def _device_token_refresh_now(session):
+    """
+    同步取一次 deviceToken 并写缓存 (busy 防并发: 后台线程与热路径同步调用互斥)。
+    返回新 token; 失败返回 None (保留旧缓存)。
+    """
+    with _device_token_cache["lock"]:
+        if _device_token_cache["busy"]:
+            return _device_token_cache["token"]   # 别的线程正在取, 先回旧值
+        _device_token_cache["busy"] = True
+    try:
+        tok = get_device_token(session)
+    except Exception:
+        tok = None
+    finally:
+        with _device_token_cache["lock"]:
+            _device_token_cache["busy"] = False
+    if tok:
+        with _device_token_cache["lock"]:
+            _device_token_cache["token"] = tok
+            _device_token_cache["ts"] = time.time()
+    return tok
+
+
+def _device_token_refresher(session):
+    while True:
+        try:
+            _device_token_refresh_now(session)
+        except Exception:
+            pass
+        time.sleep(cfg.DEVICE_TOKEN_TTL)
+
+
+def start_device_token_refresher(session):
+    """启动后台 deviceToken 刷新线程 (幂等)。放票前调用, 保持 token 常新。"""
+    with _device_token_cache["lock"]:
+        if _device_token_cache["thread"] and _device_token_cache["thread"].is_alive():
+            return _device_token_cache["thread"]
+        t = threading.Thread(target=_device_token_refresher, args=(session,),
+                             daemon=True)
+        _device_token_cache["thread"] = t
+        t.start()
+        return t
+
+
+def get_device_token_cached(session, force=False):
+    """
+    优先返回缓存里的 deviceToken (放票热路径 0 等待);
+    无缓存 / 已超 DEVICE_TOKEN_TTL / force=True 时同步现取并刷新缓存。
+    """
+    with _device_token_cache["lock"]:
+        cached_ok = (_device_token_cache["token"]
+                     and time.time() - _device_token_cache["ts"] <= cfg.DEVICE_TOKEN_TTL)
+    if cached_ok and not force:
+        return _device_token_cache["token"]
+    tok = _device_token_refresh_now(session)
+    if tok:
+        return tok
+    # 同步刷新失败: 兜底回旧 token (可能刚过期, 但好过没有)
+    with _device_token_cache["lock"]:
+        return _device_token_cache["token"]
 
 
 # ============================================================================
