@@ -287,7 +287,7 @@ def main():
         if not ctx:
             return
         # 提交订单前稍作等待, 避免过快触发风控
-        time.sleep(random.uniform(1.5, 1.6))
+        time.sleep(random.uniform(1.0, 1.5))
 
         # ★ 在 getBlock 之前预先取好 Host-Ip (腾讯校时IP加密), 下单时直接复用
         host_ip = api.build_host_ip(session)

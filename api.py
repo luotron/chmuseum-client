@@ -522,7 +522,8 @@ def scan_for_ticket(session):
                     hall_name = hall.get("name", "未知展厅")
                     schedules = hall.get("scheduleTicketPoolVOS") or []
 
-                    if is_in_time_range() and hall_id != 1:
+                    # 仅锁定基本陈列 (hallId=1) 展厅, 其他展厅仅作日志展示
+                    if hall_id != 1:
                         continue
 
                     for sch in schedules:
@@ -541,7 +542,7 @@ def scan_for_ticket(session):
                     print("[%s] 有展厅配置但暂无可下单场次..." % now_str, end="\r")
                 else:
                     print("[%s] 扫描正常: hallTicketPoolVOS 均为 null" % now_str, end="\r")
-                time.sleep(random.uniform(1.0, 2.0))
+                time.sleep(random.uniform(1.0, 1.2))
                 continue
 
             # 排序 (升序, 越小越优先):
@@ -631,7 +632,7 @@ def scan_for_ticket(session):
 
             # 所有候选都没查到有效 priceId
             print("[%s] 有展厅配置但暂无可下单余票..." % now_str, end="\r")
-            time.sleep(random.uniform(1.0, 2.0))
+            time.sleep(random.uniform(1.0, 1.2))
 
         except Exception as e:
             log("扫描异常 (%s), 重建 Session 并等待" % e)
