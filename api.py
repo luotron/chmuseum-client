@@ -568,10 +568,9 @@ def scan_for_ticket(session):
                 sch_pool = cand["pool"]
 
                 # 选择入馆日期 -> 点击个人预约
-                time.sleep(random.uniform(0.5, 1.0))
                 get_order_info_by_status(session)
                 # 滑动观众预约须知弹窗 -> 查 priceId
-                time.sleep(random.uniform(1.0, 2.0))
+                time.sleep(random.uniform(1.0, 1.5))
                 gain_user_contacter_list(session)
                 price_list = fetch_price_details(
                     session, hall_id, schedule_id, target_date
@@ -617,7 +616,7 @@ def scan_for_ticket(session):
                 log("   日期: %s" % target_date)
                 log("=" * 60)
                 # 锁定后、下单前先校验带队(下单人)信息
-                time.sleep(random.uniform(1, 2))
+                time.sleep(random.uniform(1.5, 2.0))
                 check_leader_info(session, ctx)
                 # 用户标识初始化埋点 (后台线程, fire-and-forget)
                 tdid_state = tdid_client._load_state()
