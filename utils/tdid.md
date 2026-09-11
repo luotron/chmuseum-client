@@ -128,7 +128,7 @@ statisticsInfo["11"] = 随机 UUID（reqId）
 |------|-----|------|
 | `"4"` | `"windows"` | 操作系统平台 |
 | `"43"` | `"wifi"` | 网络类型 |
-| `"101"` | `"osPfN4seDJhyEgrFmC_DME8Bq3bc"` | 操作系统指纹（可能是混淆的硬件/系统标识） |
+| `"101"` | `"osPfN4seDJhyEgrFmC_DME8Bq3bc"` | 小程序用户openid |
 | `"103"` | `"3.17.0"` | 小程序 SDK 版本 |
 | `"104"` | `"microsoft"` | 设备厂商 |
 | `"105"` | `"microsoft"` | 设备品牌 |

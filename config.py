@@ -126,6 +126,13 @@ HOST_IP_KEY_SCAN = "mjnkHYmu0jpURBTQ"
 POINT_OFFSET = 10                 # 点选坐标 -10 偏移 (Verify 组件 bindingClick)
 PLATFORM = 2                      # 非扫码
 
+# ============================ 准点下单模式 ============================
+# 准点下单目标时间 (HH:MM:SS)。设为有效时间格式时开启准点下单
+# (跳过 scan_for_ticket 轮询查票, 直接锁定 hallId=1/scheduleId随机1~3/priceId=8,
+# 时间未到时在 gain_user_contacter_list 前等待, 到点直接执行下单);
+# 设为空串 "" 或非法格式时关闭准点下单, 走原轮询查票流程。
+PUNCTUAL_ORDER_TIME = "17:00:10"
+
 
 # ============================================================================
 #  登录态字段 (统一由 cache/login 管理, 不再硬编码)

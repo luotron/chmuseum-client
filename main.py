@@ -283,7 +283,13 @@ def main():
         time.sleep(random.uniform(0.5, 1.0))
         
         # 扫描 + 锁定 (三者齐备立即停止扫描)
-        ctx = api.scan_for_ticket(session)
+        # PUNCTUAL_ORDER_TIME 为有效 HH:MM:SS 时才进入准点下单模式 (直接锁定下单)
+        punctual_time = None
+        if api.parse_hms(cfg.PUNCTUAL_ORDER_TIME) >= 0:
+            punctual_time = cfg.PUNCTUAL_ORDER_TIME
+        else:
+            log("PUNCTUAL_ORDER_TIME 未配置或格式非法, 使用轮询查票流程。")
+        ctx = api.scan_for_ticket(session, punctual_time=punctual_time)
         if not ctx:
             return
         # 提交订单前稍作等待, 避免过快触发风控

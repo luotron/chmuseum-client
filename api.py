@@ -12,7 +12,7 @@ import random
 import re
 import threading
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 import cycronet
 import config as cfg
 from utils.aes import aes_ecb_b64
@@ -478,14 +478,109 @@ def _schedule_time_key(sch):
     return hh * 3600 + mm * 60 + ss
 
 
-def scan_for_ticket(session):
+def parse_hms(hms):
+    """解析 "HH:MM:SS" 为当天秒数; 格式非法返回 -1。"""
+    try:
+        h, m, s = (int(x) for x in str(hms).split(":"))
+        if not (0 <= h < 24 and 0 <= m < 60 and 0 <= s < 60):
+            return -1
+        return h * 3600 + m * 60 + s
+    except Exception:
+        return -1
+
+
+def _wait_until_hms(hms):
+    """
+    阻塞等待到当天 hms 时刻 ("HH:MM:SS")。已过点立即返回。
+    等待期间每 0.5s 刷新一次倒计时 (不刷屏, \r 覆盖)。
+    """
+    target = parse_hms(hms)
+    if target < 0:
+        log("准点时间格式非法: %s, 不等待。" % hms)
+        return
+    while True:
+        now = datetime.now()
+        cur = now.hour * 3600 + now.minute * 60 + now.second
+        remain = target - cur
+        if remain <= 0:
+            log("⏰ 已到点 %s, 继续下单流程 ..." % hms)
+            return
+        print("[%s] 距准点下单 %s 剩余 %02d:%02d:%02d ..."
+              % (now.strftime("%H:%M:%S"), hms,
+                 remain // 3600, (remain % 3600) // 60, remain % 60), end="\r")
+        time.sleep(0.5)
+
+
+def _punctual_direct_lock(session, punctual_time):
+    """
+    准点下单: 直接锁定 hallId=1 / scheduleId随机1~3 / priceId=8, 不等待
+    gainAllSystemConfig 查询到有余票。入馆日期固定为当天日期+7天。时间未到时在
+    gain_user_contacter_list 前等待到点, 到点后返回 ctx 由调用方直接下单。
+    """
+    log("🎯 准点下单模式: 直接锁定 hallId=1, scheduleId随机1~3, priceId=8 "
+        "(不等待 gainAllSystemConfig 查到余票), %s 到点直接下单" % punctual_time)
+
+    # 1) 入馆日期 = 当天日期 + 7 天
+    date = (datetime.now() + timedelta(days=7)).strftime("%Y-%m-%d")
+    log("准点模式: 入馆日期=%s (当天+7天)" % date)
+
+    # 2) 直接锁定固定参数 (不查余票 / 不查 priceId)
+    hall_id = 1
+    schedule_id = random.randint(1, 3)
+    price_id = 8
+
+    # 3) 锁定前流程 (模拟小程序点击), 时间未到 -> 在 gain_user_contacter_list 前等待
+    get_order_info_by_status(session)
+    time.sleep(random.uniform(1.0, 1.5))
+    _wait_until_hms(punctual_time)
+    gain_user_contacter_list(session)
+
+    ctx = {
+        "hallId": hall_id,
+        "scheduleId": schedule_id,
+        "priceId": price_id,
+        "date": date,
+        "hallName": "基本陈列",
+        "schedName": "准点直锁场次%d" % schedule_id,
+        "priceName": "准点直锁",
+        "ticketPool": 0,
+    }
+    log("=" * 60)
+    log("🎉 准点直锁完成, 直接进入下单流程")
+    log("   展厅: %s (hallId=%s)" % (ctx["hallName"], hall_id))
+    log("   场次: scheduleId=%s (随机 1~3)" % schedule_id)
+    log("   票价: priceId=%s (固定)" % price_id)
+    log("   日期: %s" % date)
+    log("=" * 60)
+    # 锁定后、下单前先校验带队(下单人)信息
+    time.sleep(random.uniform(1.5, 2.0))
+    check_leader_info(session, ctx)
+    # 用户标识初始化埋点 (后台线程, fire-and-forget)
+    tdid_state = tdid_client._load_state()
+    if tdid_state.get("uuid"):
+        tdid_client.report_user_init_async(
+            session, tdid_state["uuid"],
+            os.environ.get("TDID_HOST_SIGN", ""),
+        )
+    # 调极验 load (人机验证初始化, 与风控相关)
+    geetest_load(session)
+    return ctx
+
+
+def scan_for_ticket(session, punctual_time=None):
     """
     轮询扫描余票。只要某场次存在 scheduleTicketPoolVOS (场次配置) 即视为可下单,
     不必等 ticketPool>0; 但有余票 (ticketPool>0) 的场次优先选择; 在此基础上选择
     日期最大、时间最大的场次。锁定后返回上下文 dict:
         { hallId, scheduleId, priceId, date, hallName, schedName, priceName, ticketPool }
     否则持续轮询 (随机 1~2 秒间隔)。
+
+    punctual_time: 准点下单目标时间 "HH:MM:SS"。指定后进入准点下单模式
+    (见 _punctual_direct_lock): 直接锁定固定参数, 不等待 gainAllSystemConfig
+    查到余票, 时间未到时在 gain_user_contacter_list 前等待, 到点直接下单。
     """
+    if punctual_time:
+        return _punctual_direct_lock(session, punctual_time)
     log("开始监听余票 (随机 1~2 秒间隔)... 按 Ctrl+C 退出")
     while True:
         now_str = datetime.now().strftime("%H:%M:%S")
