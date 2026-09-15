@@ -513,27 +513,64 @@ def _wait_until_hms(hms):
 
 def _punctual_direct_lock(session, punctual_time):
     """
-    准点下单: 直接锁定 hallId=1 / scheduleId随机1~3 / priceId=8, 不等待
-    gainAllSystemConfig 查询到有余票。入馆日期固定为当天日期+7天。时间未到时在
-    gain_user_contacter_list 前等待到点, 到点后返回 ctx 由调用方直接下单。
+    准点下单: 锁定 hallId=1 / scheduleId随机1~3, priceId 通过 fetch_price_details
+    获取 (不再硬编码)。与查票下单一致, 准点前先调用 front_page + gainAllSystemConfig
+    等前置 API 预热, 入馆日期=当天日期+7天。时间未到时在 gain_user_contacter_list
+    前等待到点, 到点后返回 ctx 由调用方直接下单。
     """
-    log("🎯 准点下单模式: 直接锁定 hallId=1, scheduleId随机1~3, priceId=8 "
-        "(不等待 gainAllSystemConfig 查到余票), %s 到点直接下单" % punctual_time)
+    log("🎯 准点下单模式: hallId=1, scheduleId随机1~3, priceId 经 fetch_price_details "
+        "获取, %s 到点直接下单" % punctual_time)
 
     # 1) 入馆日期 = 当天日期 + 7 天
     date = (datetime.now() + timedelta(days=7)).strftime("%Y-%m-%d")
     log("准点模式: 入馆日期=%s (当天+7天)" % date)
 
-    # 2) 直接锁定固定参数 (不查余票 / 不查 priceId)
-    hall_id = 1
-    schedule_id = random.randint(1, 3)
-    price_id = 8
+    # 2) 准点前前置 API 预热 (与查票下单一致): front_page + gainAllSystemConfig
+    try:
+        front_page(session)  # 风控前置校验 (异步, fire-and-forget)
+        resp = session.get(cfg.ALL_CONFIG_URL, headers=cfg.build_headers(), timeout=5)
+        if resp.status_code == 200:
+            j = resp.json()
+            if j.get("code") == 200:
+                log("准点模式: gainAllSystemConfig 成功 (前置预热)")
+            else:
+                log("准点模式: gainAllSystemConfig code=%s" % j.get("code"))
+        else:
+            log("准点模式: gainAllSystemConfig HTTP %s" % resp.status_code)
+    except Exception as e:
+        log("准点模式: gainAllSystemConfig 异常 (%s), 继续流程" % e)
 
     # 3) 锁定前流程 (模拟小程序点击), 时间未到 -> 在 gain_user_contacter_list 前等待
     get_order_info_by_status(session)
     time.sleep(random.uniform(1.0, 1.5))
     _wait_until_hms(punctual_time)
     gain_user_contacter_list(session)
+
+    # 4) hallId=1, scheduleId 随机 1~3, priceId 通过 fetch_price_details 获取
+    hall_id = 1
+    schedule_id = random.randint(1, 3)
+    price_id = None
+    price_name = "未知类型"
+    p_pool = 0
+    for attempt in range(3):
+        price_list = fetch_price_details(session, hall_id, schedule_id, date)
+        valid_prices = [p for p in price_list if p.get("priceId") is not None]
+        if valid_prices:
+            avail_prices = [
+                p for p in valid_prices if (p.get("ticketPool", 0) or 0) > 0
+            ]
+            chosen = avail_prices or valid_prices
+            p = max(chosen, key=lambda x: x.get("ticketPool", 0) or 0)
+            price_id = p.get("priceId")
+            price_name = p.get("priceName", "未知类型")
+            p_pool = p.get("ticketPool", 0) or 0
+            break
+        log("准点模式: fetch_price_details 无有效 priceId, 第 %d 次重试..."
+            % (attempt + 1))
+        time.sleep(random.uniform(0.5, 1.0))
+    if price_id is None:
+        log("❌ 准点模式: 多次 fetch_price_details 均无有效 priceId, 退出。")
+        return None
 
     ctx = {
         "hallId": hall_id,
@@ -542,14 +579,14 @@ def _punctual_direct_lock(session, punctual_time):
         "date": date,
         "hallName": "基本陈列",
         "schedName": "准点直锁场次%d" % schedule_id,
-        "priceName": "准点直锁",
-        "ticketPool": 0,
+        "priceName": price_name,
+        "ticketPool": p_pool,
     }
     log("=" * 60)
     log("🎉 准点直锁完成, 直接进入下单流程")
     log("   展厅: %s (hallId=%s)" % (ctx["hallName"], hall_id))
     log("   场次: scheduleId=%s (随机 1~3)" % schedule_id)
-    log("   票价: priceId=%s (固定)" % price_id)
+    log("   票价: %s (priceId=%s) 余票=%d" % (price_name, price_id, p_pool))
     log("   日期: %s" % date)
     log("=" * 60)
     # 锁定后、下单前先校验带队(下单人)信息
@@ -576,8 +613,9 @@ def scan_for_ticket(session, punctual_time=None):
     否则持续轮询 (随机 1~2 秒间隔)。
 
     punctual_time: 准点下单目标时间 "HH:MM:SS"。指定后进入准点下单模式
-    (见 _punctual_direct_lock): 直接锁定固定参数, 不等待 gainAllSystemConfig
-    查到余票, 时间未到时在 gain_user_contacter_list 前等待, 到点直接下单。
+    (见 _punctual_direct_lock): 与查票下单一致先做 front_page / gainAllSystemConfig
+    等前置 API 预热, priceId 经 fetch_price_details 获取, 时间未到时在
+    gain_user_contacter_list 前等待, 到点直接下单。
     """
     if punctual_time:
         return _punctual_direct_lock(session, punctual_time)
