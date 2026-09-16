@@ -699,11 +699,11 @@ def scan_for_ticket(session, punctual_time=None):
                 schedule_id = sch.get("hallScheduleId")
                 sch_name = sch.get("scheduleName") or sch.get("timeRange", "全天")
                 sch_pool = cand["pool"]
-
+                time.sleep(random.uniform(0.5, 1.0))
                 # 选择入馆日期 -> 点击个人预约
                 get_order_info_by_status(session)
                 # 滑动观众预约须知弹窗 -> 查 priceId
-                time.sleep(random.uniform(1.0, 1.5))
+                time.sleep(random.uniform(1.0, 1.8))
                 gain_user_contacter_list(session)
                 price_list = fetch_price_details(
                     session, hall_id, schedule_id, target_date
