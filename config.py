@@ -131,7 +131,7 @@ PLATFORM = 2                      # 非扫码
 # (跳过 scan_for_ticket 轮询查票, 直接锁定 hallId=1/scheduleId随机1~3/priceId=8,
 # 时间未到时在 gain_user_contacter_list 前等待, 到点直接执行下单);
 # 设为空串 "" 或非法格式时关闭准点下单, 走原轮询查票流程。
-PUNCTUAL_ORDER_TIME = "17:00:10"
+PUNCTUAL_ORDER_TIME = ""
 
 
 # ============================================================================
