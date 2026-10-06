@@ -1,8 +1,8 @@
 """
-bm_captcha.py — 验证码可视化点选窗口 + pointJson 生成
+captcha.py — 验证码可视化点选窗口 + pointJson 生成
 ================================================================================
 - CaptchaPicker: tkinter 窗口显示 getBlock 的验证码图 (310x155, 与原图 1:1),
-  用户点选目标图案。取点逻辑与 pointJson.html 一致: 输出 x=px-10, y=py-10。
+  用户点选目标图案。取点逻辑与小程序前端一致: 输出 x=px-10, y=py-10。
 - build_point_json: 按 secretKey 做 AES-128-ECB 加密 -> Base64。
 
 依赖: Pillow (getBlock 返回 JPEG, tkinter 原生不支持) + tkinter (内置)。
@@ -134,7 +134,7 @@ class CaptchaPicker:
 
 def build_point_json(points, secret_key):
     """
-    按 pointJson.html / monitor.html 逻辑生成加密 pointJson:
+    按小程序前端 pointJson 生成逻辑加密:
       单点:  明文 = {"x": px-10, "y": py-10}
       多点:  明文 = {"pointVOS":[{"x":px-10,"y":py-10}, ...]} (文字点选)
     然后 AES-128-ECB(secretKey) -> Base64。secret_key 为空则返回明文 (调试)。

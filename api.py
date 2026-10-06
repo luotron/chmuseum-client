@@ -1,8 +1,8 @@
 """
-bm_api.py — 国博接口调用层
+api.py — 国博接口调用层
 ================================================================================
 封装: checkToken / 腾讯校时 / nonce / 余票扫描 / getBlock / deviceToken / placeOrder
-所有请求头由 bm_config.build_headers() 生成 (自动带最新 API_TOKEN)。
+所有请求头由 config.build_headers() 生成 (自动带最新 API_TOKEN)。
 """
 
 import base64
@@ -43,7 +43,7 @@ def get_user_info(session):
     user = j["user"]
     log("getUserInfo 成功: userId=%s userName=%s nickName=%s"
         % (user.get("userId"), user.get("userName"), user.get("nickName")))
-    # 把用户信息写入账号文件 cache/login/{userId}.json 的 login.userInfo
+    # 把用户信息写入账号文件 cache/login/{openid}.json 的 login.userInfo
     try:
         tdid_client.save_user_info(user)
     except Exception as e:
@@ -82,8 +82,8 @@ def get_real_name_bind(session):
 
 
 
-# 说明: 登录信息已改由 utils/tdid.py 合并写入 cache/login/{userId}.json
-# (首次 type=0 请求成功时按 userId 绑定; 旧的独立落盘机制已移除)。
+# 说明: 登录信息已改由 utils/tdid.py 合并写入 cache/login/{openid}.json
+# (首次 type=0 请求成功时按 openid 绑定; 旧的独立落盘机制已移除)。
 
 
 # ============================================================================

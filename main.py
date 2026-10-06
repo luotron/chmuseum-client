@@ -1,21 +1,24 @@
 """
-bmuseum.py — 国博余票监控 + 自动验证码点选下单 (主入口)
+main.py — 国博余票监控 + 自动验证码点选下单 (主入口)
 ================================================================================
 运行流程:
   0. checkToken 校验 API_TOKEN 有效性 -> 返回 userInfo 才继续 (保存 userId/登录信息)
   1. 轮询 gainAllSystemConfig 扫描余票, 发现 hallId/scheduleId/priceId 齐备立即锁定
   2. getBlock 拿验证码图 (nonce = AES(userId:ts:date:hall:sch:platform))
   3. tkinter 可视化点选 -> pointJson = AES(secretKey, {x,y})
-  4. deviceToken (node tdid_client.js)
+  4. deviceToken (utils/tdid.py 纯 Python 两阶段, 无需 node)
   5. placeOrder 下单
 
 模块划分:
-  bm_config.py   配置常量 / 请求头 / 登录信息落盘路径
-  bm_aes.py      纯 Python AES-128-ECB (nonce / pointJson)
-  bm_api.py      接口调用 (checkToken / 校时 / nonce / 扫描 / getBlock / deviceToken / placeOrder)
-  bm_captcha.py  点选窗口 + build_point_json
+  config.py            配置常量 / 请求头 / 登录信息落盘路径
+  utils/aes.py         纯 Python AES-128-ECB (nonce / pointJson)
+  api.py               接口调用 (checkToken / 校时 / nonce / 扫描 / getBlock / deviceToken / placeOrder)
+  login.py             两段式小程序登录 (基于本地应用宝协议服务)
+  utils/captcha.py     手动点选窗口 + build_point_json
+  utils/captcha_auto.py 自动验证码识别 (YOLO + ResNet50)
+  utils/tdid.py        deviceToken / TDID 埋点 (纯 Python)
 
-依赖: cycronet + Pillow + tkinter(内置) + node(deviceToken)
+依赖: cycronet + Pillow + tkinter(内置)
 """
 
 import os

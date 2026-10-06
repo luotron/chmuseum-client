@@ -4,13 +4,13 @@ login.py — 国博小程序两段式登录 (基于本地应用宝协议服务)
 运行流程:
   0. 校验本地服务 (http://127.0.0.1:8000/health) 是否启动; 未启动直接退出。
   0.5 POST /accounts/refresh     刷新账号存活状态, 过滤出 status=alive 的账号。
-  1. GET  /accounts               取账号列表, 逐个拿 uin(主键)/openid(ref)/nickname。
-  2. 若 uin 已在 cache/login/ 登录过 -> 跳过该账号。
-  3. POST /wxapp/getCode          用 ref(openid) 换取微信登录 code。
+  1. GET  /accounts               取账号列表, 逐个拿 openid(主键)/uin/nickname。
+  2. 若 openid 已在 cache/login/ 登录过 -> 跳过该账号。
+  3. POST /wxapp/getCode          用 openid 换取微信登录 code。
   4. POST /prod-api/api/getWxminiSessioinInfo  用 code 换 openid/session_key/unionid。
-  5. POST /wxapp/getPhoneNumber   用 ref(openid) 拿 encryptedData / iv。
+  5. POST /wxapp/getPhoneNumber   用 openid 拿 encryptedData / iv。
   6. POST /prod-api/api/miniAppLogin  组合以上字段登录, 返回 token(=API_TOKEN)。
-  7. 登录产物落盘 cache/login/{uin}.json (存在即视为已登录, 下次跳过)。
+  7. 登录产物落盘 cache/login/{openid}.json (存在即视为已登录, 下次跳过)。
 
 字段映射:
   - miniAppLogin.encryptedData = getPhoneNumber.encryptedData

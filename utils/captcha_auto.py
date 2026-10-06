@@ -1,7 +1,7 @@
 """
 captcha_auto.py — 自动验证码识别模块 (YOLO 检测 + ResNet50 孪生匹配)
 ================================================================================
-按《YOLO 模型说明.md》的识别方法实现 (生产方案):
+按 YOLO 检测 + ResNet50 孪生匹配的识别方法实现 (生产方案):
   1. YOLO (best.onnx, yolo v3 训练)  在大图里检测所有目标 bbox;
   2. ResNet50 (resnet50_embed.onnx)  把「目标小图」和「每个 bbox 裁剪图」都编成
      2048 维 embedding;
@@ -39,7 +39,7 @@ _MODELS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
 YOLO_ONNX = os.path.join(_MODELS_DIR, "best.onnx")
 RESNET_ONNX = os.path.join(_MODELS_DIR, "resnet50_embed.onnx")
 
-# ---- 推理参数 (与源码 booking/fruit_matcher_onnx.py 一致) ----
+# ---- 推理参数 (与模型原始训练源码一致) ----
 INFER_IMGSZ = 640
 INFER_CONF = 0.02
 NMS_IOU = 0.45

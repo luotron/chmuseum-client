@@ -1,5 +1,5 @@
 """
-bm_aes.py — 纯 Python AES-128-ECB / PKCS7 实现 (等价 CryptoJS.AES ECB Pkcs7)
+aes.py — 纯 Python AES-128-ECB / PKCS7 实现 (等价 CryptoJS.AES ECB Pkcs7)
 ================================================================================
 用于 nonce (key=AyrKJRXPO3nR5Abc) 与 pointJson (key=secretKey) 的加密。
 无第三方依赖。输出经与 node crypto / 抓包真实 nonce 逐字符校验一致。

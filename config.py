@@ -138,7 +138,7 @@ PUNCTUAL_ORDER_TIME = ""
 #  登录态字段 (统一由 cache/login 管理, 不再硬编码)
 # ----------------------------------------------------------------------------
 #  以下均为「运行时内存变量」, 默认全空:
-#    - 由 config.load_login(uin) 从 cache/login/{uin}.json 加载回填;
+#    - 由 config.load_login(openid) 从 cache/login/{openid}.json 加载回填;
 #    - 运行中被 api/tdid 回填 (USER_ID/实名) 后可由 config.save_login() 回写。
 # ============================================================================
 API_TOKEN = ""          # 登录 token (miniAppLogin 返回), build_headers 使用
