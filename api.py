@@ -630,7 +630,7 @@ def scan_for_ticket(session, punctual_time=None):
 
             if resp.status_code != 200:
                 log("HTTP %s, 稍后重试" % resp.status_code)
-                time.sleep(random.uniform(2.0, 5.0))
+                time.sleep(random.uniform(30.0, 60.0))
                 continue
 
             res_json = resp.json()
@@ -675,7 +675,7 @@ def scan_for_ticket(session, punctual_time=None):
                     print("[%s] 有展厅配置但暂无可下单场次..." % now_str, end="\r")
                 else:
                     print("[%s] 扫描正常: hallTicketPoolVOS 均为 null" % now_str, end="\r")
-                time.sleep(random.uniform(1.0, 1.2))
+                time.sleep(random.uniform(1.5, 2.0))
                 continue
 
             # 排序 (升序, 越小越优先):
@@ -764,7 +764,7 @@ def scan_for_ticket(session, punctual_time=None):
 
             # 所有候选都没查到有效 priceId
             print("[%s] 有展厅配置但暂无可下单余票..." % now_str, end="\r")
-            time.sleep(random.uniform(1.0, 1.2))
+            time.sleep(random.uniform(1.0, 2.0))
 
         except Exception as e:
             log("扫描异常 (%s), 重建 Session 并等待" % e)
