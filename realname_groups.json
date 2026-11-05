@@ -1,0 +1,111 @@
+{
+  "groups": [
+    {
+      "id": 1,
+      "label": "12号国博中午",
+      "used": true,
+      "members": [
+        {
+          "userName": "程海裕",
+          "certificateInfo": "440520195910270315"
+        },
+        {
+          "userName": "徐娜璇",
+          "certificateInfo": "440520196207160928"
+        },
+        {
+          "userName": "杨琼华",
+          "certificateInfo": "440525196911186840"
+        },
+        {
+          "userName": "杨少辉",
+          "certificateInfo": "445221196603086832"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "label": "11号国博上午",
+      "used": false,
+      "members": [
+        {
+          "userName": "黄传昭",
+          "certificateInfo": "440525196810246517"
+        },
+        {
+          "userName": "王少娟",
+          "certificateInfo": "440525196806046520"
+        },
+        {
+          "userName": "蔡泽波",
+          "certificateInfo": "44052019730923235X"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "label": "10号国博下午",
+      "used": true,
+      "members": [
+        {
+          "userName": "蔡金婵",
+          "certificateInfo": "440520197209262340"
+        },
+        {
+          "userName": "蔡岳欣",
+          "certificateInfo": "445102197112122317"
+        },
+        {
+          "userName": "蔡秀芬",
+          "certificateInfo": "440520197106012322"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "label": "8号国博上午",
+      "used": false,
+      "members": [
+        {
+          "userName": "孙丹娜",
+          "certificateInfo": "445202197807123442"
+        },
+        {
+          "userName": "涂明煌",
+          "certificateInfo": "445221198810235924"
+        },
+        {
+          "userName": "吴淡庄",
+          "certificateInfo": "440525195607265961"
+        },
+        {
+          "userName": "郭丽红",
+          "certificateInfo": "440520196707075922"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "label": "11.6上午国博",
+      "used": false,
+      "members": [
+        {
+          "userName": "李成杰",
+          "certificateInfo": "330183198206092617"
+        },
+        {
+          "userName": "蒋依娜",
+          "certificateInfo": "330183198401042623"
+        },
+        {
+          "userName": "唐瑜梅",
+          "certificateInfo": "370685198801270040"
+        },
+        {
+          "userName": "王铂霖",
+          "certificateInfo": "370685201810287017"
+        }
+      ]
+    }
+  ]
+}

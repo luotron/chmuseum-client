@@ -55,7 +55,8 @@ def get_real_name_bind(session):
     """
     GET /prod-api/realName/v1/isBind?p=wxmini
     查询下单实名信息, 返回 data dict。若已绑定实名, 把 userName/certificateInfo
-    回填到 cfg.ORDER_USER_NAME / cfg.ORDER_CERT_INFO。失败返回 None。
+    回填到 cfg.ORDER_USER_NAME / cfg.ORDER_CERT_INFO (config 已有值时保留 config
+    的值, 不覆盖)。失败返回 None。
     """
     try:
         resp = session.get(cfg.ISBIND_URL, headers=cfg.build_headers(), timeout=8)
@@ -71,10 +72,12 @@ def get_real_name_bind(session):
         return None
     data = j["data"]
     if data.get("bindRealName") and data.get("userName") and data.get("certificateInfo"):
-        cfg.ORDER_USER_NAME = data["userName"]
-        cfg.ORDER_CERT_INFO = data["certificateInfo"]
+        if not cfg.ORDER_USER_NAME:
+            cfg.ORDER_USER_NAME = data["userName"]
+        if not cfg.ORDER_CERT_INFO:
+            cfg.ORDER_CERT_INFO = data["certificateInfo"]
         log("isBind 成功: 已回填实名 userName=%s certificate=%s(%s)"
-            % (data.get("userName"), data.get("certificateInfo"),
+            % (cfg.ORDER_USER_NAME, cfg.ORDER_CERT_INFO,
                data.get("certificateName")))
     else:
         log("isBind: 未绑定实名或信息不全: %s" % json.dumps(data, ensure_ascii=False)[:200])
@@ -82,8 +85,124 @@ def get_real_name_bind(session):
 
 
 
-# 说明: 登录信息已改由 utils/tdid.py 合并写入 cache/login/{openid}.json
-# (首次 type=0 请求成功时按 openid 绑定; 旧的独立落盘机制已移除)。
+# ============================================================================
+#  实名组池: 下单时从未使用过的组里随机取一组, 下单成功后标记为已用
+#  (配置文件: realname_groups.json; 组内多人 -> ticketInfoList 多条, ticketNum 同人数)
+# ============================================================================
+_realname_state = {"group_id": None, "members": []}
+
+
+def load_realname_groups():
+    """
+    读取实名组配置 realname_groups.json, 返回 groups 列表 (dict 元素)。
+    文件不存在/解析失败返回 []。
+    """
+    try:
+        with open(cfg.REALNAME_GROUPS_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        groups = data.get("groups", []) or []
+        return [g for g in groups if isinstance(g, dict)]
+    except Exception as e:
+        log("读取实名组配置失败 (%s): %s" % (cfg.REALNAME_GROUPS_FILE, e))
+        return []
+
+
+def _save_realname_groups(groups):
+    """把 groups 列表写回 realname_groups.json。成功返回 True。"""
+    try:
+        with open(cfg.REALNAME_GROUPS_FILE, "w", encoding="utf-8") as f:
+            json.dump({"groups": groups}, f, ensure_ascii=False, indent=2)
+        return True
+    except Exception as e:
+        log("写入实名组配置失败 (%s): %s" % (cfg.REALNAME_GROUPS_FILE, e))
+        return False
+
+
+def pick_realname_group():
+    """
+    从未使用过 (used != true) 的实名组里随机取一组, 记录到本次下单流程缓存,
+    返回该组成员列表 [{userName, certificateInfo}, ...]。
+    没有可用组时返回 [] (回退 config 单人实名)。
+    """
+    global _realname_state
+    groups = load_realname_groups()
+    avail = [g for g in groups if not g.get("used") and g.get("members")]
+    if not avail:
+        log("⚠ 实名组已全部使用或为空, 回退 config 单人实名 (ORDER_USER_NAME)。")
+        _realname_state = {"group_id": None, "members": []}
+        return []
+    g = random.choice(avail)
+    members = [
+        m for m in g.get("members", [])
+        if isinstance(m, dict) and (m.get("userName") or m.get("certificateInfo"))
+    ]
+    _realname_state = {"group_id": g.get("id"), "members": members}
+    log("🎫 本次下单随机选中实名组: %s (id=%s, %d 人)"
+        % (g.get("label") or "未命名", g.get("id"), len(members)))
+    return members
+
+
+def get_order_members():
+    """
+    返回本次下单流程的实名成员列表 (ticketInfoList 数据源)。
+    尚未选组时随机选一组; 已有缓存直接复用 (保证 checkLeaderInfo 与
+    placeOrder 用同一组人)。
+    """
+    global _realname_state
+    if _realname_state.get("members"):
+        return _realname_state["members"]
+    return pick_realname_group()
+
+
+def mark_order_group_used():
+    """
+    下单成功后, 把本次选中的实名组标记为 used=true 持久化到
+    realname_groups.json, 并清空本次选择 (下次流程重新随机取未用组)。
+    """
+    global _realname_state
+    group_id = _realname_state.get("group_id")
+    if group_id is None:
+        return
+    groups = load_realname_groups()
+    for g in groups:
+        if g.get("id") == group_id:
+            g["used"] = True
+            if _save_realname_groups(groups):
+                log("✅ 实名组已标记为已用: %s (id=%s)"
+                    % (g.get("label") or "未命名", group_id))
+            break
+    _realname_state = {"group_id": None, "members": []}
+
+
+def build_ticket_info_list(ctx, use_date):
+    """
+    按本次下单选中的实名组成员构造 ticketInfoList (一人一张票);
+    无组成员时回退为 config 单人票 (ORDER_USER_NAME / ORDER_CERT_INFO)。
+    """
+    members = get_order_members()
+    if not members:
+        members = [{
+            "userName": cfg.ORDER_USER_NAME,
+            "certificateInfo": cfg.ORDER_CERT_INFO,
+        }]
+    return [
+        {
+            "status": 0,
+            "saleMode": 1,
+            "platform": cfg.PLATFORM,
+            "hallId": int(ctx["hallId"]),
+            "hallScheduleId": int(ctx["scheduleId"]),
+            "cinemaFlag": 0,
+            "ticketPriceId": int(ctx["priceId"]),
+            "certificate": 1,
+            "certificateInfo": m.get("certificateInfo") or cfg.ORDER_CERT_INFO,
+            "userName": m.get("userName") or cfg.ORDER_USER_NAME,
+            "useDate": use_date,
+            "isChildFreeTicket": 0,
+            "realNameFlag": 1,
+        }
+        for m in members
+    ]
 
 
 # ============================================================================
@@ -367,32 +486,17 @@ def check_leader_info(session, ctx):
     """
     date = ctx["date"]                 # yyyy-MM-dd
     use_date = date + " 00:00:00"
+    ticket_list = build_ticket_info_list(ctx, use_date)
     body = {
         "useTicketType": 1,
         "poolFlag": 1,
         "realNameFlag": 1,
         "platform": cfg.PLATFORM,
-        "ticketNum": 1,
+        "ticketNum": len(ticket_list),
         "date": date,
         "childTicketNum": 0,
         "saleMode": 1,
-        "ticketInfoList": [
-            {
-                "status": 0,
-                "saleMode": 1,
-                "platform": cfg.PLATFORM,
-                "hallId": int(ctx["hallId"]),
-                "hallScheduleId": int(ctx["scheduleId"]),
-                "cinemaFlag": 0,
-                "ticketPriceId": int(ctx["priceId"]),
-                "certificate": 1,
-                "certificateInfo": cfg.ORDER_CERT_INFO,
-                "userName": cfg.ORDER_USER_NAME,
-                "useDate": use_date,
-                "isChildFreeTicket": 0,
-                "realNameFlag": 1,
-            }
-        ],
+        "ticketInfoList": ticket_list,
         "p": "wxmini",
     }
     try:
@@ -726,7 +830,7 @@ def scan_for_ticket(session, punctual_time=None):
                 p_name = p.get("priceName", "未知类型")
 
                 # ★ 锁定并停止扫描。avail 仅作日志展示,
-                #   实际下单 ticketNum 由 place_order 固定为 1。
+                #   ticketNum 由 place_order 按随机选中的实名组人数确定。
                 avail = min(sch_pool, p_pool) if p_pool > 0 else 0
                 ctx = {
                     "hallId": hall_id,
@@ -940,35 +1044,20 @@ def get_device_token(session: cycronet.CronetClient):
 def place_order(session, ctx, point_json_cipher, captcha_token, device_token, host_ip=None):
     date = ctx["date"]                 # yyyy-MM-dd
     use_date = date + " 00:00:00"
+    ticket_list = build_ticket_info_list(ctx, use_date)
     body = {
         "useTicketType": 1,
         "poolFlag": 1,
         "realNameFlag": 1,
         "platform": cfg.PLATFORM,
-        "ticketNum": 1,
+        "ticketNum": len(ticket_list),
         "date": date,
         "childTicketNum": 0,
         "saleMode": 1,
         "pointJson": point_json_cipher,
         "captchaToken": captcha_token,
         "scanToken": None,
-        "ticketInfoList": [
-            {
-                "status": 0,
-                "saleMode": 1,
-                "platform": cfg.PLATFORM,
-                "hallId": int(ctx["hallId"]),
-                "hallScheduleId": int(ctx["scheduleId"]),
-                "cinemaFlag": 0,
-                "ticketPriceId": int(ctx["priceId"]),
-                "certificate": 1,
-                "certificateInfo": cfg.ORDER_CERT_INFO,
-                "userName": cfg.ORDER_USER_NAME,
-                "useDate": use_date,
-                "isChildFreeTicket": 0,
-                "realNameFlag": 1,
-            }
-        ],
+        "ticketInfoList": ticket_list,
         "deviceToken": device_token,
         "p": "wxmini",
     }

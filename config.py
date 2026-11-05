@@ -149,6 +149,11 @@ USER_ID = ""            # 用户 userId (checkToken 回填, nonce 明文需要)
 ORDER_USER_NAME = ""
 ORDER_CERT_INFO = ""
 
+# ---- 实名组配置文件 (下单随机取一组未使用实名, 组内多人 -> ticketInfoList 多条) ----
+REALNAME_GROUPS_FILE = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "realname_groups.json"
+)
+
 
 # ---- 验证码图片落盘目录 (getBlock 时保存验证码图 + 提示图) ----
 CAPTCHA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cache", "captcha")

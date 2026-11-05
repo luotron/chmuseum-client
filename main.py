@@ -102,6 +102,7 @@ def manualOrder(session, ctx, host_ip=None):
             log("  风控策略(riskPolicy) : %s" % d.get("riskPolicy"))
             log("  需充值(needChargeCode): %s" % d.get("needChargeCode"))
             log("=" * 60)
+            api.mark_order_group_used()
             return True
         else:
             log("⚠ manualOrder 假下单 (riskPolicy=%s, 被风控拦截): orderNumber=%s orderId=%s"
@@ -380,6 +381,7 @@ def main():
                 log("  风控策略(riskPolicy) : %s" % d.get("riskPolicy"))
                 log("  需充值(needChargeCode): %s" % d.get("needChargeCode"))
                 log("=" * 60)
+                api.mark_order_group_used()
                 return  # 成功, 终止程序
             else:
                 log("⚠ riskPolicy=%s, 被风控拦截: orderNumber=%s orderId=%s prompt=%s"
